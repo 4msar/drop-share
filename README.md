@@ -4,6 +4,13 @@ A personal artifact-sharing service on Cloudflare Workers + R2. Drop a file, a
 ZIP, or a folder in the browser (or via the `drop-share` CLI) and get back an
 immutable public URL.
 
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/4msar/drop-share)
+
+That button walks you through connecting your own Cloudflare account and
+deploying this Worker from this repo. It still won't set your real domain
+for you — see [Deploying](#deploying) for the couple of steps to finish
+after it completes.
+
 ## How it works
 
 - **Storage**: Cloudflare R2 is the only source of truth. There is no
@@ -328,6 +335,11 @@ That's also how anyone else using Claude Code can pick it up — the file is
 self-contained and doesn't depend on anything else in this repo.
 
 ## Deploying
+
+Via the **Deploy to Cloudflare** button above, or manually. Either way,
+confirm these steps actually happened rather than assuming the button did
+everything — it walks you through connecting your account and deploying the
+Worker, but double-check the R2 bucket and domain below got set up:
 
 1. Create the R2 bucket (name must match `bucket_name` in `wrangler.jsonc`,
    or edit it to match a bucket you already have):
