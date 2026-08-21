@@ -10,8 +10,9 @@ global `fetch`/`FormData`/`Blob`.
 ## Requirements
 
 - Node.js 18 or newer
-- A running drop-share server (self-hosted; there is no public shared
-  instance)
+- A drop-share server to upload to (self-hosted). If you don't set
+  `--server`/`ARTIFACT_SERVER`, uploads go to this maintainer's own instance
+  at `https://artifacts.msar.dev` by default — see the note below.
 
 ## Use it with no install
 
@@ -37,7 +38,7 @@ drop-share upload <path> [--server <url>] [--extract] [--name <name>]
 | Argument / option    | Description |
 |-----------------------|-------------|
 | `<path>`              | File or folder to upload. Required. |
-| `--server <url>`      | The drop-share server to upload to. Can be set via `ARTIFACT_SERVER` instead. |
+| `--server <url>`      | The drop-share server to upload to. Can be set via `ARTIFACT_SERVER` instead. Defaults to `https://artifacts.msar.dev` if neither is given. |
 | `--extract`           | Only applies to a `.zip` file: extract it server-side into a browsable artifact instead of uploading it unchanged. |
 | `--name <name>`       | Override the display/stored filename for a single-file upload. |
 
@@ -48,6 +49,13 @@ drop-share upload <path> [--server <url>] [--extract] [--name <name>]
 export ARTIFACT_SERVER=https://your-domain
 drop-share upload ./release.zip
 ```
+
+> **Note:** if you don't pass `--server` and don't set `ARTIFACT_SERVER`,
+> this CLI uploads to the maintainer's own server
+> (`https://artifacts.msar.dev`) by default. That server has no
+> authentication, so this is a convenience default, not a shared public
+> service — point `--server` at your own drop-share deployment for anything
+> beyond quick testing.
 
 ## Examples
 

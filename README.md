@@ -65,7 +65,7 @@ All configurable via `vars` in `wrangler.jsonc`, defaults shown:
 "MAX_FILE_SIZE_BYTES": "10485760",       // 10 MB, per individual file
 "MAX_ARTIFACT_SIZE_BYTES": "10485760",   // 10 MB, total per artifact (folder or extracted ZIP)
 "MAX_ARTIFACT_FILE_COUNT": "2000",       // caps file count independent of byte size
-"PUBLIC_BASE_URL": "https://artifacts.example.com"
+"PUBLIC_BASE_URL": "https://artifacts.msar.dev"
 ```
 
 Every limit is enforced **server-side**, before any object is written to R2:
@@ -264,7 +264,12 @@ npm install -g @4msar/drop-share
 drop-share upload ./photo.png --server https://your-domain
 ```
 
-`ARTIFACT_SERVER` can be set instead of passing `--server` every time.
+`ARTIFACT_SERVER` can be set instead of passing `--server` every time. If
+neither is given, the CLI defaults to `https://artifacts.msar.dev` — this
+maintainer's own instance. Since that server has no authentication (see
+"Security model" above), leaving `--server`/`ARTIFACT_SERVER` unset means
+anyone running this published CLI uploads to *that* instance by default.
+Point `--server` at your own deployment if you don't want that.
 
 **Publishing a new CLI version** (maintainers): push a tag matching
 `cli-v*` (e.g. `git tag cli-v0.2.0 && git push --tags`), or run the
