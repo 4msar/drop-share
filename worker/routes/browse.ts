@@ -188,6 +188,22 @@ function fileIcon(name: string): string {
     return "📄";
 }
 
+const SHARE_SCRIPT = `
+<script>
+  document.querySelectorAll('[data-share]').forEach((btn) => {
+    const originalLabel = btn.textContent;
+    btn.addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(window.location.href);
+        btn.textContent = 'Copied!';
+      } catch (err) {
+        btn.textContent = 'Copy failed';
+      }
+      setTimeout(() => { btn.textContent = originalLabel; }, 1500);
+    });
+  });
+</script>`;
+
 const DELETE_SCRIPT = `
 <script>
   document.querySelectorAll('[data-delete-artifact]').forEach((btn) => {
@@ -235,6 +251,7 @@ function pageShell(title: string, body: string): string {
   body { font: 15px/1.5 system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text); display: flex; flex-direction: column; height: 100vh; }
   a { color: inherit; }
   .viewer-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 18px 24px; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+  .header-actions { display: flex; gap: 8px; flex-shrink: 0; }
   h1 { font-size: 18px; margin: 0 0 2px; word-break: break-all; color: var(--text-h); }
   .meta { color: var(--muted); font-size: 13px; margin: 0; }
   .viewer { flex: 1; display: grid; grid-template-columns: 280px 1fr; min-height: 0; }
@@ -376,7 +393,10 @@ function renderArtifactViewerPage(
     <h1>${escapeHtml(title)}</h1>
     <p class="meta">${fileCountLabel}${folderCountLabel}</p>
   </div>
-  ${isRoot ? `<button class="btn danger" data-delete-artifact="${escapeHtml(id)}">Delete artifact</button>` : ""}
+  <div class="header-actions">
+    <button class="btn" data-share>Share</button>
+    ${isRoot ? `<button class="btn danger" data-delete-artifact="${escapeHtml(id)}">Delete artifact</button>` : ""}
+  </div>
 </header>
 <div class="viewer">
   <nav class="file-list" aria-label="Files in this artifact">
@@ -390,6 +410,7 @@ function renderArtifactViewerPage(
   </section>
 </div>
 ${PREVIEW_SCRIPT}
+${SHARE_SCRIPT}
 ${DELETE_SCRIPT}`;
 
     return pageShell(title, body);
