@@ -133,6 +133,7 @@ function App() {
     return (
         <main className="page">
             <header className="topbar">
+                <img src="/logo.svg" alt="Drop Share Logo" className="logo" />
                 <span className="brand">Drop Share</span>
             </header>
 
@@ -161,7 +162,9 @@ function App() {
                     >
                         <UploadIcon />
                         <h1>Drop files, ZIPs, or folders here</h1>
-                        <p className="drop-subtitle">or choose from your device</p>
+                        <p className="drop-subtitle">
+                            or choose from your device
+                        </p>
                         <div className="drop-actions">
                             <button
                                 type="button"
@@ -210,7 +213,9 @@ function App() {
                                     <button
                                         type="button"
                                         className="large"
-                                        onClick={() => startUpload("zip-extract")}
+                                        onClick={() =>
+                                            startUpload("zip-extract")
+                                        }
                                     >
                                         Extract &amp; Browse
                                     </button>
@@ -225,11 +230,17 @@ function App() {
                                     <button
                                         type="button"
                                         className="primary large"
-                                        onClick={() => startUpload(modeForReady)}
+                                        onClick={() =>
+                                            startUpload(modeForReady)
+                                        }
                                     >
                                         Upload
                                     </button>
-                                    <button type="button" className="link" onClick={reset}>
+                                    <button
+                                        type="button"
+                                        className="link"
+                                        onClick={reset}
+                                    >
                                         Choose different files
                                     </button>
                                 </div>
@@ -245,13 +256,18 @@ function App() {
                                         }}
                                     />
                                 </div>
-                                <p>Uploading... {Math.round(progress * 100)}%</p>
+                                <p>
+                                    Uploading... {Math.round(progress * 100)}%
+                                </p>
                             </div>
                         )}
 
                         {status === "success" && (
                             <div className="success" role="status">
-                                <div className="success-icon" aria-hidden="true">
+                                <div
+                                    className="success-icon"
+                                    aria-hidden="true"
+                                >
                                     ✓
                                 </div>
                                 <p>Upload complete.</p>
@@ -265,7 +281,11 @@ function App() {
                         {status === "error" && (
                             <div className="error" role="alert">
                                 <p>{errorMessage}</p>
-                                <button type="button" className="large" onClick={reset}>
+                                <button
+                                    type="button"
+                                    className="large"
+                                    onClick={reset}
+                                >
                                     Try again
                                 </button>
                             </div>
@@ -305,6 +325,28 @@ function App() {
                     event.target.value = "";
                 }}
             />
+
+            <footer className="footer">
+                <p className="footer-text">
+                    <a
+                        title="Made with ❤️ by msar.dev"
+                        href="https://msar.dev"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                    >
+                        msar
+                    </a>
+                    |
+                    <a
+                        title="View source on GitHub"
+                        href="https://github.com/4msar/drop-share"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                    >
+                        github
+                    </a>
+                </p>
+            </footer>
         </main>
     );
 }

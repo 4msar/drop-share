@@ -273,8 +273,8 @@ function pageShell(title: string, body: string): string {
   .btn { display: inline-block; padding: 8px 16px; border-radius: 6px; border: 1px solid var(--border); text-decoration: none; cursor: pointer; background: none; font-size: 13px; font-family: inherit; white-space: nowrap; color: var(--text-h); }
   .btn.danger { border-color: #ef4444; color: #ef4444; }
   @media (max-width: 720px) {
-    .viewer { grid-template-columns: 1fr; grid-template-rows: 40vh 1fr; }
-    .file-list { border-right: none; border-bottom: 1px solid var(--border); }
+    .viewer { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
+    .file-list { border-right: none; border-bottom: 1px solid var(--border); max-height: 25vh; overflow: auto; }
   }
 </style>
 </head>
