@@ -1,6 +1,6 @@
 {
   "name": "@4msar/drop-share",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "CLI for uploading files, ZIPs, and folders to a drop-share instance",
   "type": "module",
   "bin": {

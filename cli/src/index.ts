@@ -4,6 +4,7 @@ import { readFileSync, readdirSync, statSync } from "node:fs";
 
 const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024;
 const MAX_ARTIFACT_SIZE_BYTES = 10 * 1024 * 1024;
+const DEFAULT_SERVER = "https://artifacts.msar.dev";
 
 type UploadMode = "file" | "zip" | "zip-extract" | "directory";
 
@@ -28,7 +29,8 @@ interface UploadResult {
 function printUsageAndExit(): never {
   console.error("Usage: drop-share upload <path> [--server <url>] [--extract] [--name <name>]");
   console.error("");
-  console.error("Environment: ARTIFACT_SERVER can be set instead of passing --server.");
+  console.error(`Environment: ARTIFACT_SERVER can be set instead of passing --server.`);
+  console.error(`Defaults to ${DEFAULT_SERVER} if neither is given.`);
   process.exit(1);
 }
 
@@ -38,14 +40,14 @@ function parseArgs(argv: string[]): Args {
     printUsageAndExit();
   }
 
-  let server = process.env.ARTIFACT_SERVER ?? "";
+  let server = process.env.ARTIFACT_SERVER ?? DEFAULT_SERVER;
   let extract = false;
   let name: string | undefined;
 
   for (let i = 0; i < rest.length; i++) {
     const arg = rest[i];
     if (arg === "--server") {
-      server = rest[++i] ?? "";
+      server = rest[++i] ?? server;
     } else if (arg === "--extract") {
       extract = true;
     } else if (arg === "--name") {
@@ -54,11 +56,6 @@ function parseArgs(argv: string[]): Args {
       console.error(`Unknown option: ${arg}`);
       printUsageAndExit();
     }
-  }
-
-  if (!server) {
-    console.error("No server configured. Pass --server <url> or set ARTIFACT_SERVER.");
-    process.exit(1);
   }
 
   return { targetPath: resolve(rawTargetPath), server: server.replace(/\/+$/, ""), extract, name };
@@ -173,7 +170,9 @@ async function main(): Promise<void> {
       process.exit(1);
     }
     const totalSize = validateDirectorySizes(entries);
-    console.log(`Uploading ${basename(args.targetPath)}/ (${entries.length} files, ${formatBytes(totalSize)})...`);
+    console.log(
+      `Uploading ${basename(args.targetPath)}/ (${entries.length} files, ${formatBytes(totalSize)}) to ${args.server}...`,
+    );
     const result = await uploadDirectory(args.server, entries);
     printSuccess(args.server, result);
     return;
@@ -185,7 +184,7 @@ async function main(): Promise<void> {
   validateFileSize(stats.size, displayName);
 
   const modeLabel = mode === "zip-extract" ? " (extract & browse)" : "";
-  console.log(`Uploading ${displayName} (${formatBytes(stats.size)})${modeLabel}...`);
+  console.log(`Uploading ${displayName} (${formatBytes(stats.size)})${modeLabel} to ${args.server}...`);
   const result = await uploadSingleFile(args.server, args.targetPath, mode, displayName);
   printSuccess(args.server, result);
 }
