@@ -8,12 +8,29 @@
 	"main": "worker/index.ts",
 	"compatibility_date": "2026-08-20",
 	"assets": {
-		"not_found_handling": "single-page-application"
+		"binding": "ASSETS",
+		"not_found_handling": "single-page-application",
+		// The Worker must see every request: it owns /api/*, /a/*, and the raw
+		// file bytes it serves need artifact-aware headers (Content-Disposition,
+		// cache-control) that plain static-asset serving can't apply per-object.
+		"run_worker_first": true
 	},
 	"observability": {
 		"enabled": true
 	},
-	"upload_source_maps": true
+	"upload_source_maps": true,
+	"r2_buckets": [
+		{
+			"binding": "ARTIFACTS_BUCKET",
+			"bucket_name": "drop-share-artifacts"
+		}
+	],
+	"vars": {
+		"MAX_FILE_SIZE_BYTES": "10485760",
+		"MAX_ARTIFACT_SIZE_BYTES": "10485760",
+		"MAX_ARTIFACT_FILE_COUNT": "2000",
+		"PUBLIC_BASE_URL": "https://artifacts.example.com"
+	}
 	/**
 	 * Smart Placement
 	 * https://developers.cloudflare.com/workers/configuration/smart-placement/#smart-placement
