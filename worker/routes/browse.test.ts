@@ -16,6 +16,49 @@ async function upload(mode: string, files: { name: string; content: string | Uin
   return response.json() as Promise<{ success: boolean; id: string; url: string }>;
 }
 
+describe("GET /a/:id/* : two-pane viewer", () => {
+  it("defaults the preview pane to index.html when one is present", async () => {
+    const { url } = await upload("directory", [
+      { name: "index.html", content: "<h1>home</h1>" },
+      { name: "about.html", content: "<h1>about</h1>" },
+    ]);
+    const html = await (await exports.default.fetch(`https://artifacts.example.com${url}`)).text();
+
+    expect(html).toContain(`id="preview-frame"`);
+    expect(html).toContain(`src="${url}index.html"`);
+    expect(html).not.toContain('id="preview-frame" title="File preview" src="" hidden');
+    expect(html).toContain(`data-preview="${url}index.html"`);
+    expect(html).toContain(`data-preview="${url}about.html"`);
+  });
+
+  it("shows a placeholder and hides the iframe when nothing in the folder is previewable", async () => {
+    const { url } = await upload("directory", [
+      { name: "archive.zip", content: new Uint8Array([1, 2, 3]) },
+      { name: "data.bin", content: new Uint8Array([4, 5, 6]) },
+    ]);
+    const html = await (await exports.default.fetch(`https://artifacts.example.com${url}`)).text();
+
+    expect(html).toMatch(/<iframe[^>]*hidden/);
+    expect(html).toContain("No preview available");
+    expect(html).not.toContain("data-preview=");
+  });
+
+  it("pre-selects the only file for a single-file artifact when it's previewable", async () => {
+    const { url } = await upload("file", [{ name: "notes.txt", content: "hello" }]);
+    const html = await (await exports.default.fetch(`https://artifacts.example.com${url}`)).text();
+
+    expect(html).toContain(`src="${url}notes.txt"`);
+    expect(html).toContain('class="file-item previewable active"');
+  });
+
+  it("a folder with only subfolders shows the 'open a subfolder' placeholder, not the no-preview one", async () => {
+    const { url } = await upload("directory", [{ name: "assets/logo.png", content: new Uint8Array([1]) }]);
+    const html = await (await exports.default.fetch(`https://artifacts.example.com${url}`)).text();
+
+    expect(html).toContain("open one from the list");
+  });
+});
+
 describe("GET /a/:id/* : serving and browsing", () => {
   it("404s for an artifact that was never uploaded", async () => {
     const response = await exports.default.fetch(

@@ -25,6 +25,34 @@ const DIRECTORY_INPUT_PROPS = {
     directory: "true",
 } as Record<string, string>;
 
+function UploadIcon() {
+    return (
+        <svg
+            className="drop-icon"
+            width="72"
+            height="72"
+            viewBox="0 0 24 24"
+            fill="none"
+            aria-hidden="true"
+        >
+            <path
+                d="M7 18a4.5 4.5 0 0 1-.4-8.98A5.5 5.5 0 0 1 17.5 8a4 4 0 0 1 .5 7.98"
+                stroke="currentColor"
+                strokeWidth="1.4"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+            />
+            <path
+                d="M12 20v-7.5m0 0-3 3m3-3 3 3"
+                stroke="currentColor"
+                strokeWidth="1.4"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+            />
+        </svg>
+    );
+}
+
 function App() {
     const [status, setStatus] = useState<Status>("idle");
     const [selection, setSelection] = useState<Selection | null>(null);
@@ -89,11 +117,12 @@ function App() {
         (event: React.DragEvent<HTMLDivElement>) => {
             event.preventDefault();
             setDragActive(false);
+            if (status === "uploading") return;
             void filesFromDataTransfer(event.dataTransfer.items).then(
                 handleSelection,
             );
         },
-        [handleSelection],
+        [handleSelection, status],
     );
 
     const totalSize = selection
@@ -103,43 +132,146 @@ function App() {
 
     return (
         <main className="page">
-            <h1>Drop Share</h1>
-            <p className="subtitle">Drop a file, ZIP, or folder here</p>
+            <header className="topbar">
+                <span className="brand">Drop Share</span>
+            </header>
 
             <div
-                className={`dropzone${dragActive ? " drag-active" : ""}`}
+                className={`drop-panel${dragActive ? " drag-active" : ""}`}
                 onDragOver={(event) => {
                     event.preventDefault();
-                    setDragActive(true);
+                    if (status !== "uploading") setDragActive(true);
                 }}
                 onDragLeave={() => setDragActive(false)}
                 onDrop={onDrop}
-                role="button"
-                tabIndex={0}
-                aria-label="Drop files or a folder here, or activate to choose files"
-                onKeyDown={(event) => {
-                    if (event.key === "Enter" || event.key === " ") {
-                        event.preventDefault();
-                        fileInputRef.current?.click();
-                    }
-                }}
             >
-                <p className="dropzone-label">Drag &amp; drop here</p>
-                <div className="dropzone-actions">
-                    <button
-                        type="button"
+                {status === "idle" && (
+                    <div
+                        className="drop-idle"
+                        role="button"
+                        tabIndex={0}
+                        aria-label="Drop files or a folder here, or activate to choose files"
                         onClick={() => fileInputRef.current?.click()}
+                        onKeyDown={(event) => {
+                            if (event.key === "Enter" || event.key === " ") {
+                                event.preventDefault();
+                                fileInputRef.current?.click();
+                            }
+                        }}
                     >
-                        Choose Files
-                    </button>
-                    <button
-                        type="button"
-                        onClick={() => folderInputRef.current?.click()}
-                    >
-                        Choose Folder
-                    </button>
-                </div>
-                <p className="hint">Maximum file size: 10 MB</p>
+                        <UploadIcon />
+                        <h1>Drop files, ZIPs, or folders here</h1>
+                        <p className="drop-subtitle">or choose from your device</p>
+                        <div className="drop-actions">
+                            <button
+                                type="button"
+                                className="primary large"
+                                onClick={(event) => {
+                                    event.stopPropagation();
+                                    fileInputRef.current?.click();
+                                }}
+                            >
+                                Choose Files
+                            </button>
+                            <button
+                                type="button"
+                                className="large"
+                                onClick={(event) => {
+                                    event.stopPropagation();
+                                    folderInputRef.current?.click();
+                                }}
+                            >
+                                Choose Folder
+                            </button>
+                        </div>
+                        <p className="hint">Maximum file size: 10 MB</p>
+                    </div>
+                )}
+
+                {selection && status !== "idle" && (
+                    <div className="drop-status" aria-live="polite">
+                        <p className="selection-meta">
+                            <strong>{selection.files.length}</strong> file
+                            {selection.files.length === 1 ? "" : "s"} selected ·{" "}
+                            {formatBytes(totalSize)}
+                        </p>
+
+                        {status === "zip-choice" && (
+                            <div className="zip-choice">
+                                <p>How do you want to upload this ZIP?</p>
+                                <div className="zip-choice-actions">
+                                    <button
+                                        type="button"
+                                        className="primary large"
+                                        onClick={() => startUpload("zip")}
+                                    >
+                                        Upload ZIP
+                                    </button>
+                                    <button
+                                        type="button"
+                                        className="large"
+                                        onClick={() => startUpload("zip-extract")}
+                                    >
+                                        Extract &amp; Browse
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+
+                        {status === "ready" &&
+                            modeForReady &&
+                            modeForReady !== "zip-choice" && (
+                                <div className="ready-actions">
+                                    <button
+                                        type="button"
+                                        className="primary large"
+                                        onClick={() => startUpload(modeForReady)}
+                                    >
+                                        Upload
+                                    </button>
+                                    <button type="button" className="link" onClick={reset}>
+                                        Choose different files
+                                    </button>
+                                </div>
+                            )}
+
+                        {status === "uploading" && (
+                            <div className="progress" role="status">
+                                <div className="progress-track">
+                                    <div
+                                        className="progress-fill"
+                                        style={{
+                                            width: `${Math.round(progress * 100)}%`,
+                                        }}
+                                    />
+                                </div>
+                                <p>Uploading... {Math.round(progress * 100)}%</p>
+                            </div>
+                        )}
+
+                        {status === "success" && (
+                            <div className="success" role="status">
+                                <div className="success-icon" aria-hidden="true">
+                                    ✓
+                                </div>
+                                <p>Upload complete.</p>
+                                <p>
+                                    <a href={resultUrl}>{resultUrl}</a>
+                                </p>
+                                <p className="hint">Redirecting...</p>
+                            </div>
+                        )}
+
+                        {status === "error" && (
+                            <div className="error" role="alert">
+                                <p>{errorMessage}</p>
+                                <button type="button" className="large" onClick={reset}>
+                                    Try again
+                                </button>
+                            </div>
+                        )}
+                    </div>
+                )}
             </div>
 
             <input
@@ -173,81 +305,6 @@ function App() {
                     event.target.value = "";
                 }}
             />
-
-            {selection && status !== "idle" && (
-                <section className="selection-summary" aria-live="polite">
-                    <p className="selection-meta">
-                        <strong>{selection.files.length}</strong> file
-                        {selection.files.length === 1 ? "" : "s"} selected ·{" "}
-                        {formatBytes(totalSize)}
-                    </p>
-
-                    {status === "zip-choice" && (
-                        <div className="zip-choice">
-                            <p>How do you want to upload this ZIP?</p>
-                            <div className="zip-choice-actions">
-                                <button
-                                    type="button"
-                                    className="primary"
-                                    onClick={() => startUpload("zip")}
-                                >
-                                    Upload ZIP
-                                </button>
-                                <button
-                                    type="button"
-                                    onClick={() => startUpload("zip-extract")}
-                                >
-                                    Extract &amp; Browse
-                                </button>
-                            </div>
-                        </div>
-                    )}
-
-                    {status === "ready" &&
-                        modeForReady &&
-                        modeForReady !== "zip-choice" && (
-                            <button
-                                type="button"
-                                className="primary"
-                                onClick={() => startUpload(modeForReady)}
-                            >
-                                Upload
-                            </button>
-                        )}
-
-                    {status === "uploading" && (
-                        <div className="progress" role="status">
-                            <div className="progress-track">
-                                <div
-                                    className="progress-fill"
-                                    style={{
-                                        width: `${Math.round(progress * 100)}%`,
-                                    }}
-                                />
-                            </div>
-                            <p>Uploading... {Math.round(progress * 100)}%</p>
-                        </div>
-                    )}
-
-                    {status === "success" && (
-                        <div className="success" role="status">
-                            <p>Upload complete.</p>
-                            <p>
-                                <a href={resultUrl}>{resultUrl}</a>
-                            </p>
-                        </div>
-                    )}
-
-                    {status === "error" && (
-                        <div className="error" role="alert">
-                            <p>{errorMessage}</p>
-                            <button type="button" onClick={reset}>
-                                Try again
-                            </button>
-                        </div>
-                    )}
-                </section>
-            )}
         </main>
     );
 }

@@ -56,12 +56,7 @@ async function renderDirectory(id: string, relSubPath: string, env: Env, request
     return jsonError(404, "Artifact not found");
   }
 
-  const isRoot = relSubPath === "";
-  const html =
-    isRoot && listing.files.length === 1 && listing.directories.length === 0
-      ? renderSingleFilePage(id, listing.files[0])
-      : renderDirectoryPage(id, relSubPath, listing);
-
+  const html = renderArtifactViewerPage(id, relSubPath, listing);
   return htmlResponse(html, request.method);
 }
 
@@ -170,19 +165,44 @@ function pageShell(title: string, body: string): string {
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${escapeHtml(title)}</title>
 <style>
-  :root { color-scheme: light dark; }
-  body { font: 16px/1.5 system-ui, -apple-system, sans-serif; max-width: 720px; margin: 0 auto; padding: 32px 20px; }
-  h1 { font-size: 20px; word-break: break-all; margin-bottom: 4px; }
-  .meta { color: #6b7280; font-size: 14px; margin: 0 0 24px; }
-  ul.listing { list-style: none; padding: 0; margin: 0; border-top: 1px solid #e5e7eb; }
-  ul.listing li { display: flex; align-items: center; gap: 10px; padding: 10px 4px; border-bottom: 1px solid #e5e7eb; }
-  ul.listing a { flex: 1; text-decoration: none; color: inherit; word-break: break-all; }
-  ul.listing a:hover { text-decoration: underline; }
-  .size { color: #6b7280; font-size: 13px; white-space: nowrap; }
-  .icon { width: 1.25em; text-align: center; }
-  .actions { margin-top: 24px; display: flex; gap: 12px; }
-  .btn { display: inline-block; padding: 8px 16px; border-radius: 6px; border: 1px solid #d1d5db; text-decoration: none; color: inherit; cursor: pointer; background: none; font-size: 14px; font-family: inherit; }
+  :root {
+    --bg: #fff; --text: #374151; --text-h: #111827; --border: #e5e7eb; --muted: #6b7280;
+    --accent: #7c3aed; --accent-bg: rgba(124, 58, 237, 0.12);
+    color-scheme: light dark;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #16171d; --text: #cbd5e1; --text-h: #f3f4f6; --border: #30323c; --muted: #9ca3af;
+      --accent: #c084fc; --accent-bg: rgba(192, 132, 252, 0.15);
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body { font: 15px/1.5 system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text); display: flex; flex-direction: column; height: 100vh; }
+  a { color: inherit; }
+  .viewer-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 18px 24px; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+  h1 { font-size: 18px; margin: 0 0 2px; word-break: break-all; color: var(--text-h); }
+  .meta { color: var(--muted); font-size: 13px; margin: 0; }
+  .viewer { flex: 1; display: grid; grid-template-columns: 280px 1fr; min-height: 0; }
+  .file-list { overflow-y: auto; border-right: 1px solid var(--border); }
+  .file-list ul { list-style: none; margin: 0; padding: 8px; }
+  .file-item { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 6px; }
+  .file-item a { flex: 1; text-decoration: none; word-break: break-all; font-size: 14px; }
+  .file-item .size { color: var(--muted); font-size: 12px; white-space: nowrap; }
+  .file-item.previewable { cursor: pointer; }
+  .file-item:hover { background: var(--accent-bg); }
+  .file-item.active { background: var(--accent-bg); }
+  .file-item.active > a { color: var(--accent); font-weight: 500; }
+  .icon { width: 1.25em; text-align: center; flex-shrink: 0; }
+  .preview-pane { position: relative; display: flex; background: var(--bg); }
+  .preview-pane iframe { width: 100%; height: 100%; border: none; flex: 1; background: #fff; }
+  .preview-placeholder { margin: auto; color: var(--muted); text-align: center; padding: 24px; max-width: 320px; }
+  .btn { display: inline-block; padding: 8px 16px; border-radius: 6px; border: 1px solid var(--border); text-decoration: none; cursor: pointer; background: none; font-size: 13px; font-family: inherit; white-space: nowrap; color: var(--text-h); }
   .btn.danger { border-color: #ef4444; color: #ef4444; }
+  @media (max-width: 720px) {
+    .viewer { grid-template-columns: 1fr; grid-template-rows: 40vh 1fr; }
+    .file-list { border-right: none; border-bottom: 1px solid var(--border); }
+  }
 </style>
 </head>
 <body>
@@ -191,7 +211,31 @@ ${body}
 </html>`;
 }
 
-function renderDirectoryPage(id: string, subPath: string, listing: ArtifactListing): string {
+/** Picks which file (if any) the preview pane should show by default: index.html first, else the first previewable file. */
+function pickDefaultPreview(sortedFiles: ArtifactChild[]): ArtifactChild | null {
+  const previewable = sortedFiles.filter((file) => isInlineSafe(file.contentType ?? getContentType(file.name)));
+  if (previewable.length === 0) return null;
+  return previewable.find((file) => file.name.toLowerCase() === "index.html") ?? previewable[0];
+}
+
+const PREVIEW_SCRIPT = `
+<script>
+  document.querySelectorAll('[data-preview]').forEach((link) => {
+    link.addEventListener('click', (event) => {
+      event.preventDefault();
+      document.querySelectorAll('.file-item.active').forEach((item) => item.classList.remove('active'));
+      const item = link.closest('.file-item');
+      if (item) item.classList.add('active');
+      const frame = document.getElementById('preview-frame');
+      const placeholder = document.getElementById('preview-placeholder');
+      frame.src = link.getAttribute('data-preview');
+      frame.hidden = false;
+      if (placeholder) placeholder.hidden = true;
+    });
+  });
+</script>`;
+
+function renderArtifactViewerPage(id: string, subPath: string, listing: ArtifactListing): string {
   const base = `/a/${id}/`;
   const currentPath = `${base}${subPath}`;
   const isRoot = subPath === "";
@@ -201,25 +245,33 @@ function renderDirectoryPage(id: string, subPath: string, listing: ArtifactListi
     : (() => {
         const trimmed = subPath.replace(/\/$/, "");
         const parentSubPath = trimmed.includes("/") ? `${trimmed.slice(0, trimmed.lastIndexOf("/"))}/` : "";
-        return `<li><span class="icon">⬆️</span><a href="${escapeHtml(base + parentSubPath)}">.. (parent directory)</a></li>`;
+        return `<li class="file-item"><span class="icon">⬆️</span><a href="${escapeHtml(base + parentSubPath)}">.. (parent directory)</a></li>`;
       })();
+
+  const sortedFiles = listing.files.slice().sort((a, b) => a.name.localeCompare(b.name));
+  const defaultPreview = pickDefaultPreview(sortedFiles);
 
   const dirItems = listing.directories
     .slice()
     .sort()
     .map(
       (dir) =>
-        `<li><span class="icon">📁</span><a href="${escapeHtml(currentPath + dir)}">${escapeHtml(dir)}</a></li>`,
+        `<li class="file-item"><span class="icon">📁</span><a href="${escapeHtml(currentPath + dir)}">${escapeHtml(dir)}</a></li>`,
     )
     .join("");
 
-  const fileItems = listing.files
-    .slice()
-    .sort((a, b) => a.name.localeCompare(b.name))
-    .map(
-      (file) =>
-        `<li><span class="icon">${fileIcon(file.name)}</span><a href="${escapeHtml(currentPath + file.name)}">${escapeHtml(file.name)}</a><span class="size">${formatSize(file.size)}</span></li>`,
-    )
+  const fileItems = sortedFiles
+    .map((file) => {
+      const contentType = file.contentType ?? getContentType(file.name);
+      const previewable = isInlineSafe(contentType);
+      const href = currentPath + file.name;
+      const isActive = defaultPreview !== null && file.name === defaultPreview.name;
+      const previewAttr = previewable ? ` data-preview="${escapeHtml(href)}"` : "";
+      const classes = ["file-item", previewable ? "previewable" : "", isActive ? "active" : ""]
+        .filter(Boolean)
+        .join(" ");
+      return `<li class="${classes}"><span class="icon">${fileIcon(file.name)}</span><a href="${escapeHtml(href)}"${previewAttr}>${escapeHtml(file.name)}</a><span class="size">${formatSize(file.size)}</span></li>`;
+    })
     .join("");
 
   const title = isRoot ? id : `${id} / ${subPath}`;
@@ -227,25 +279,33 @@ function renderDirectoryPage(id: string, subPath: string, listing: ArtifactListi
   const fileCountLabel = `${listing.files.length} file${listing.files.length === 1 ? "" : "s"}`;
   const folderCountLabel = folderCount ? `, ${folderCount} folder${folderCount === 1 ? "" : "s"}` : "";
 
+  const previewSrc = defaultPreview ? currentPath + defaultPreview.name : "";
+  const placeholderText =
+    listing.files.length === 0
+      ? "This folder only contains subfolders — open one from the list."
+      : "No preview available for these files — click one in the list to download it.";
+
   const body = `
-<h1>${escapeHtml(title)}</h1>
-<p class="meta">${fileCountLabel}${folderCountLabel}</p>
-<ul class="listing">${parentLink}${dirItems}${fileItems}</ul>
-${isRoot ? `<div class="actions"><button class="btn danger" data-delete-artifact="${escapeHtml(id)}">Delete artifact</button></div>` : ""}
+<header class="viewer-header">
+  <div>
+    <h1>${escapeHtml(title)}</h1>
+    <p class="meta">${fileCountLabel}${folderCountLabel}</p>
+  </div>
+  ${isRoot ? `<button class="btn danger" data-delete-artifact="${escapeHtml(id)}">Delete artifact</button>` : ""}
+</header>
+<div class="viewer">
+  <nav class="file-list" aria-label="Files in this artifact">
+    <ul>${parentLink}${dirItems}${fileItems}</ul>
+  </nav>
+  <section class="preview-pane">
+    <iframe id="preview-frame" title="File preview" src="${escapeHtml(previewSrc)}"${defaultPreview ? "" : " hidden"}></iframe>
+    <div id="preview-placeholder" class="preview-placeholder"${defaultPreview ? " hidden" : ""}>
+      <p>${escapeHtml(placeholderText)}</p>
+    </div>
+  </section>
+</div>
+${PREVIEW_SCRIPT}
 ${DELETE_SCRIPT}`;
 
   return pageShell(title, body);
-}
-
-function renderSingleFilePage(id: string, file: ArtifactChild): string {
-  const fileUrl = `/a/${id}/${file.name}`;
-  const body = `
-<h1>${escapeHtml(file.name)}</h1>
-<p class="meta">${formatSize(file.size)} · uploaded ${escapeHtml(file.uploaded.toISOString())}</p>
-<div class="actions">
-  <a class="btn" href="${escapeHtml(fileUrl)}">Open file</a>
-  <button class="btn danger" data-delete-artifact="${escapeHtml(id)}">Delete artifact</button>
-</div>
-${DELETE_SCRIPT}`;
-  return pageShell(file.name, body);
 }

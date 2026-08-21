@@ -25,7 +25,7 @@ immutable public URL.
 
 ```
 https://your-domain/                     upload UI (React)
-https://your-domain/a/<ulid>/             artifact page (listing or single-file view)
+https://your-domain/a/<ulid>/             artifact viewer: file list (left) + live preview (right)
 https://your-domain/a/<ulid>/some/path    a specific file inside the artifact
 ```
 
@@ -152,6 +152,18 @@ only two types that need real containment:
   can't override the declared type through content sniffing.
 - Directory-listing pages HTML-escape every filename before rendering
   (`escapeHtml`), since a filename is attacker-controlled text.
+
+**The artifact viewer** (`/a/:id/`) is a two-pane page: a file/folder list on
+the left, a live preview pane on the right. Clicking a previewable file loads
+it into an `<iframe>` on the right (client-side, no page reload) and
+highlights it in the list; clicking a folder navigates normally. A file that
+isn't previewable (a ZIP, a binary) has no click handler at all — the browser
+just downloads it via the `Content-Disposition` set on that URL. The default
+preview on load is `index.html` if one exists at that level, otherwise the
+first previewable file, otherwise a placeholder. The preview iframe is just
+pointed at the same `/a/:id/...` file URLs described above, so it inherits
+all the same headers (sandbox CSP for HTML/SVG, correct content type, etc.) —
+the viewer adds no new attack surface of its own.
 
 **Other things checked**: path traversal and ZIP-slip (shared
 `normalizeRelativePath`, exercised by both regular uploads and ZIP entries);
