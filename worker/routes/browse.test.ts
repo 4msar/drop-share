@@ -51,6 +51,25 @@ describe("GET /a/:id/* : two-pane viewer", () => {
     expect(html).toContain('class="file-item previewable active"');
   });
 
+  it("gives every sidebar item (file and folder) its own open-in-new-tab link, separate from the preview click handler", async () => {
+    const { url } = await upload("directory", [
+      { name: "index.html", content: "<h1>home</h1>" },
+      { name: "assets/logo.png", content: new Uint8Array([1]) },
+    ]);
+    const html = await (await exports.default.fetch(`https://artifacts.example.com${url}`)).text();
+
+    expect(html).toContain(
+      `<a class="open-tab" href="${url}index.html" target="_blank" rel="noopener noreferrer"`,
+    );
+    expect(html).toContain(
+      `<a class="open-tab" href="${url}assets/" target="_blank" rel="noopener noreferrer"`,
+    );
+    // the open-tab link must not carry data-preview, so it never gets the
+    // click-intercept handler and behaves like a normal target=_blank link
+    const openTabIndexMatch = html.match(/<a class="open-tab" href="[^"]*index\.html"[^>]*>/);
+    expect(openTabIndexMatch?.[0]).not.toContain("data-preview");
+  });
+
   it("a folder with only subfolders shows the 'open a subfolder' placeholder, not the no-preview one", async () => {
     const { url } = await upload("directory", [{ name: "assets/logo.png", content: new Uint8Array([1]) }]);
     const html = await (await exports.default.fetch(`https://artifacts.example.com${url}`)).text();
