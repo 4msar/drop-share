@@ -204,7 +204,7 @@ drop-share/
 ├── src/                       React upload UI (Vite)
 │   ├── App.tsx / App.css
 │   └── upload.ts              drag/drop + directory-entry traversal, XHR upload w/ progress
-├── cli/                       published to npm as @4msar/drop-share (zero runtime deps)
+├── cli/                       published to npm as drop-and-share (zero runtime deps)
 │   └── src/index.ts
 ├── worker/**/*.test.ts        vitest (Workers runtime) unit + integration tests
 ├── .github/workflows/
@@ -245,22 +245,22 @@ no authentication token to store.
 
 ## The CLI
 
-The `drop-share` CLI is published to npm as `@4msar/drop-share`, with zero
-runtime dependencies (Node built-ins only: `fs`, `path`, global
-`fetch`/`FormData`).
+The `drop-share` CLI is published to npm as `drop-and-share` (the package
+name; the command it installs is still `drop-share`), with zero runtime
+dependencies (Node built-ins only: `fs`, `path`, global `fetch`/`FormData`).
 
 **Use it with no install** (needs Node.js 18+):
 
 ```bash
-npx @4msar/drop-share upload ./photo.png --server https://your-domain
-npx @4msar/drop-share upload ./release.zip --extract --server https://your-domain
-npx @4msar/drop-share upload ./my-project/ --server https://your-domain
+npx drop-and-share upload ./photo.png --server https://your-domain
+npx drop-and-share upload ./release.zip --extract --server https://your-domain
+npx drop-and-share upload ./my-project/ --server https://your-domain
 ```
 
 **Or install it once** for a persistent `drop-share` binary on your PATH:
 
 ```bash
-npm install -g @4msar/drop-share
+npm install -g drop-and-share
 drop-share upload ./photo.png --server https://your-domain
 ```
 
@@ -276,8 +276,8 @@ Point `--server` at your own deployment if you don't want that.
 "Publish CLI" workflow manually from the Actions tab with a version input.
 `.github/workflows/publish-cli.yml` syncs `cli/package.json`'s version to
 the tag, builds it, and runs `npm publish`. This needs an `NPM_TOKEN` repo
-secret — an npm access token with publish rights to the `@4msar` scope,
-added under **Settings → Secrets and variables → Actions**.
+secret — an npm access token with publish rights to the `drop-and-share`
+package, added under **Settings → Secrets and variables → Actions**.
 
 **Building and running the CLI locally**, without publishing:
 

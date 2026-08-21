@@ -1,8 +1,9 @@
-# @4msar/drop-share
+# drop-and-share
 
 Command-line uploader for [drop-share](https://github.com/4msar/drop-share) —
 upload a file, a ZIP, or a whole folder to a drop-share server and get back
-an immutable artifact URL.
+an immutable artifact URL. Published to npm as `drop-and-share`; the command
+it installs is `drop-share`.
 
 Zero runtime dependencies: it only uses Node's own `fs`/`path` and the
 global `fetch`/`FormData`/`Blob`.
@@ -17,13 +18,13 @@ global `fetch`/`FormData`/`Blob`.
 ## Use it with no install
 
 ```bash
-npx @4msar/drop-share upload ./photo.png --server https://your-domain
+npx drop-and-share upload ./photo.png --server https://your-domain
 ```
 
 ## Or install it once
 
 ```bash
-npm install -g @4msar/drop-share
+npm install -g drop-and-share
 drop-share upload ./photo.png --server https://your-domain
 ```
 

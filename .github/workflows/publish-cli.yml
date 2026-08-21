@@ -1,8 +1,8 @@
 name: Publish CLI
 
-# Publishes the drop-share CLI to npm as @4msar/drop-share, so it can be
-# used with zero install (`npx @4msar/drop-share ...`) or installed once for
-# a persistent `drop-share` binary (`npm install -g @4msar/drop-share`).
+# Publishes the drop-share CLI to npm as drop-and-share, so it can be
+# used with zero install (`npx drop-and-share ...`) or installed once for
+# a persistent `drop-share` binary (`npm install -g drop-and-share`).
 on:
   push:
     tags:
