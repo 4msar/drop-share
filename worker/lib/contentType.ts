@@ -43,23 +43,34 @@ const INLINE_SAFE_TYPES = new Set([
   "text/css; charset=utf-8",
   "text/markdown; charset=utf-8",
   "text/csv; charset=utf-8",
+  "text/javascript; charset=utf-8",
+  "text/html; charset=utf-8",
   "application/json; charset=utf-8",
   "image/png",
   "image/jpeg",
   "image/gif",
   "image/webp",
   "image/x-icon",
+  "image/svg+xml",
   "application/pdf",
+  "audio/mpeg",
+  "video/mp4",
+  "video/webm",
 ]);
 
-/**
- * Whether a type is inert enough to render inline in the browser. HTML, JS,
- * and SVG are deliberately excluded even though browsers "understand" them:
- * this app has no separate origin for untrusted content, so anything capable
- * of carrying executable script must always be force-downloaded instead of
- * rendered, to keep uploaded content from running with this origin's
- * privileges. See README security model.
- */
+// A document navigated to directly only ever executes embedded script if the
+// browser parses it as HTML or SVG - a .js/.css file opened directly is just
+// displayed as text, and <script src>/<img>/<link> subresource loads ignore
+// Content-Disposition entirely. So these two types are the only ones that
+// need the sandboxing CSP applied alongside inline rendering.
+const SCRIPT_CAPABLE_DOCUMENT_TYPES = new Set(["text/html; charset=utf-8", "image/svg+xml"]);
+
+/** Whether a type is safe enough to render/preview inline rather than force-download. */
 export function isInlineSafe(contentType: string): boolean {
   return INLINE_SAFE_TYPES.has(contentType);
+}
+
+/** Whether a type can carry executable script when opened directly, and so needs the sandbox CSP. */
+export function isScriptCapableDocument(contentType: string): boolean {
+  return SCRIPT_CAPABLE_DOCUMENT_TYPES.has(contentType);
 }

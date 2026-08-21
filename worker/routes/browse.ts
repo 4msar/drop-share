@@ -1,4 +1,4 @@
-import { getContentType, isInlineSafe } from "../lib/contentType.js";
+import { getContentType, isInlineSafe, isScriptCapableDocument } from "../lib/contentType.js";
 import { escapeHtml, jsonError, jsonOk } from "../lib/http.js";
 import { isValidArtifactId } from "../lib/ids.js";
 import { normalizeRelativePath } from "../lib/paths.js";
@@ -93,6 +93,17 @@ async function serveFile(id: string, relSubPath: string, env: Env, request: Requ
     ETag: object.httpEtag,
   });
 
+  if (isScriptCapableDocument(contentType)) {
+    // HTML/SVG render inline (so uploaded sites/pages actually work), but any
+    // embedded script only ever runs inside a sandboxed, opaque origin - no
+    // access to this site's origin, same as if it were on a totally
+    // different domain. Omitting allow-same-origin is what makes that hold.
+    headers.set(
+      "Content-Security-Policy",
+      "sandbox allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox allow-modals",
+    );
+  }
+
   if (request.method === "HEAD") {
     return new Response(null, { status: 200, headers });
   }
@@ -142,7 +153,8 @@ const DELETE_SCRIPT = `
       const id = btn.getAttribute('data-delete-artifact');
       const res = await fetch('/api/artifact/' + id, { method: 'DELETE' });
       if (res.ok) {
-        document.body.innerHTML = '<p>Artifact deleted.</p>';
+        document.body.innerHTML = '<p>Artifact deleted. Redirecting to home...</p>';
+        setTimeout(() => { window.location.href = '/'; }, 3000);
       } else {
         alert('Failed to delete artifact.');
       }

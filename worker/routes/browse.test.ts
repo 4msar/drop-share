@@ -76,16 +76,27 @@ describe("GET /a/:id/* : serving and browsing", () => {
     expect(response.headers.get("cache-control")).toBe("no-store");
   });
 
-  it("forces download for HTML even though it's a browser-renderable type", async () => {
-    const { url } = await upload("file", [{ name: "evil.html", content: "<script>alert(1)</script>" }]);
-    const response = await exports.default.fetch(`https://artifacts.example.com${url}evil.html`);
-    expect(response.headers.get("content-disposition")).toContain("attachment");
+  it("renders HTML inline, sandboxed into an opaque origin", async () => {
+    const { url } = await upload("file", [{ name: "page.html", content: "<script>alert(1)</script>" }]);
+    const response = await exports.default.fetch(`https://artifacts.example.com${url}page.html`);
+    expect(response.headers.get("content-disposition")).toContain("inline");
+    const csp = response.headers.get("content-security-policy") ?? "";
+    expect(csp).toContain("sandbox");
+    expect(csp).not.toContain("allow-same-origin");
   });
 
-  it("forces download for SVG (script-capable despite being an image type)", async () => {
+  it("renders SVG inline, also sandboxed (it can carry <script> like HTML can)", async () => {
     const { url } = await upload("file", [{ name: "icon.svg", content: "<svg onload='alert(1)'></svg>" }]);
     const response = await exports.default.fetch(`https://artifacts.example.com${url}icon.svg`);
-    expect(response.headers.get("content-disposition")).toContain("attachment");
+    expect(response.headers.get("content-disposition")).toContain("inline");
+    expect(response.headers.get("content-security-policy") ?? "").toContain("sandbox");
+  });
+
+  it("does not sandbox plain JS/CSS - they can't execute merely by being opened directly", async () => {
+    const { url } = await upload("file", [{ name: "app.js", content: "console.log(1)" }]);
+    const response = await exports.default.fetch(`https://artifacts.example.com${url}app.js`);
+    expect(response.headers.get("content-disposition")).toContain("inline");
+    expect(response.headers.get("content-security-policy")).toBeNull();
   });
 
   it("allows inline rendering for genuinely inert types like plain text", async () => {
@@ -102,6 +113,13 @@ describe("GET /a/:id/* : serving and browsing", () => {
     });
     expect(response.status).toBe(301);
     expect(response.headers.get("location")).toBe(`https://artifacts.example.com${url}css/`);
+  });
+
+  it("includes a delete control that redirects home a few seconds after a successful delete", async () => {
+    const { url } = await upload("file", [{ name: "safe.txt", content: "safe" }]);
+    const html = await (await exports.default.fetch(`https://artifacts.example.com${url}`)).text();
+    expect(html).toContain("data-delete-artifact=");
+    expect(html).toMatch(/setTimeout\(\s*\(\)\s*=>\s*\{\s*window\.location\.href = '\/';\s*\}\s*,\s*3000\s*\)/);
   });
 });
 

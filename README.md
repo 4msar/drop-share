@@ -122,19 +122,32 @@ in front of the whole zone (no code changes needed), or an
 **Untrusted content isolation, without a separate origin.** The original
 design considered a separate `usercontent.*` subdomain so uploaded HTML/JS
 could never run with the management UI's privileges. That was deliberately
-simplified away. Instead, isolation is enforced entirely through response
-headers on `/a/:id/*`:
+simplified away, and HTML/images/etc. are meant to be directly viewable —
+that's the point of the tool. Isolation instead comes from a narrower
+realization: a browser only ever executes embedded `<script>` when it parses
+a response *as HTML or SVG*. A `.js`/`.css` file opened directly just
+displays as text; `<script src>`/`<img>`/`<link>` subresource loads ignore
+`Content-Disposition` entirely and load regardless. So HTML and SVG are the
+only two types that need real containment:
 
 - Content-Type is always computed from the file extension server-side
   (`getContentType`), never trusted from the client's claimed MIME type.
-- Only a small allowlist of genuinely inert types (`text/plain`, `text/css`,
-  `application/json`, `image/png|jpeg|gif|webp`, `application/pdf`, ...) is
-  ever served with `Content-Disposition: inline`.
-- **HTML, JavaScript, and SVG are always forced to download**
-  (`Content-Disposition: attachment`), even though browsers otherwise
-  understand them fine — SVG can carry `<script>`, and HTML/JS are the whole
-  point of the risk. Forcing a download means none of it ever executes in
-  this origin's context, single-origin or not.
+- Everything on the "browser-friendly" list (`text/plain`, `text/css`,
+  `text/javascript`, `text/html`, `application/json`, images, audio/video,
+  `application/pdf`) is served `Content-Disposition: inline` — it renders
+  directly in the browser. Only genuinely unrenderable/binary types (ZIP,
+  gzip, tar, wasm, fonts, unknown extensions) are forced to download.
+- **HTML and SVG responses additionally get `Content-Security-Policy:
+  sandbox allow-scripts allow-forms allow-popups
+  allow-popups-to-escape-sandbox allow-modals`.** Any embedded script still
+  runs (so uploaded pages/demos work), but the CSP `sandbox` directive puts
+  the document in a unique, opaque origin — deliberately *without*
+  `allow-same-origin`. That means a script in an uploaded page cannot read
+  this origin's cookies/storage, and any `fetch`/`XHR` it makes back to
+  `/api/*` is treated as cross-origin (no `Access-Control-Allow-Origin` is
+  ever set, so the browser blocks it from reading the response) — the same
+  containment a separate subdomain would have given, achieved with one
+  header instead of a second hostname.
 - `X-Content-Type-Options: nosniff` is set on every file response so browsers
   can't override the declared type through content sniffing.
 - Directory-listing pages HTML-escape every filename before rendering

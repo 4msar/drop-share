@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { getContentType, isInlineSafe } from "./contentType.js";
+import { getContentType, isInlineSafe, isScriptCapableDocument } from "./contentType.js";
 
 describe("getContentType", () => {
   it("maps common extensions to their MIME type", () => {
@@ -39,15 +39,31 @@ describe("isInlineSafe", () => {
     expect(isInlineSafe("application/pdf")).toBe(true);
   });
 
-  it("forces download for anything that can execute script in a browser", () => {
-    expect(isInlineSafe("text/html; charset=utf-8")).toBe(false);
-    expect(isInlineSafe("text/javascript; charset=utf-8")).toBe(false);
-    expect(isInlineSafe("application/javascript")).toBe(false);
-    expect(isInlineSafe("image/svg+xml")).toBe(false);
+  it("allows inline rendering for HTML, JS, and SVG (paired with the sandbox CSP where it matters)", () => {
+    expect(isInlineSafe("text/html; charset=utf-8")).toBe(true);
+    expect(isInlineSafe("text/javascript; charset=utf-8")).toBe(true);
+    expect(isInlineSafe("image/svg+xml")).toBe(true);
   });
 
   it("forces download for unknown/binary types", () => {
     expect(isInlineSafe("application/octet-stream")).toBe(false);
     expect(isInlineSafe("application/zip")).toBe(false);
+  });
+});
+
+describe("isScriptCapableDocument", () => {
+  it("flags HTML and SVG - the only types that execute embedded script when opened directly", () => {
+    expect(isScriptCapableDocument("text/html; charset=utf-8")).toBe(true);
+    expect(isScriptCapableDocument("image/svg+xml")).toBe(true);
+  });
+
+  it("does not flag plain JS/CSS - opening them directly just displays text, it doesn't execute anything", () => {
+    expect(isScriptCapableDocument("text/javascript; charset=utf-8")).toBe(false);
+    expect(isScriptCapableDocument("text/css; charset=utf-8")).toBe(false);
+  });
+
+  it("does not flag images or other inert inline types", () => {
+    expect(isScriptCapableDocument("image/png")).toBe(false);
+    expect(isScriptCapableDocument("application/pdf")).toBe(false);
   });
 });
