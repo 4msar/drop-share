@@ -36,12 +36,12 @@ is never derived from the uploaded filename, so filenames never collide.
 
 One endpoint, `POST /api/upload` (`multipart/form-data`), with a `mode` field:
 
-| mode          | when                                      | R2 result                                  |
-|---------------|--------------------------------------------|---------------------------------------------|
-| `file`        | a single non-ZIP file                     | `<ulid>/<filename>`                         |
-| `zip`         | a single `.zip`, stored unchanged          | `<ulid>/<filename>.zip` (served as a download) |
-| `directory`   | a folder, or more than one loose file      | `<ulid>/<relative/path>` per file           |
-| `zip-extract` | a `.zip`, extracted server-side            | `<ulid>/<relative/path>` per extracted file |
+| mode          | when                                  | R2 result                                      |
+| ------------- | ------------------------------------- | ---------------------------------------------- |
+| `file`        | a single non-ZIP file                 | `<ulid>/<filename>`                            |
+| `zip`         | a single `.zip`, stored unchanged     | `<ulid>/<filename>.zip` (served as a download) |
+| `directory`   | a folder, or more than one loose file | `<ulid>/<relative/path>` per file              |
+| `zip-extract` | a `.zip`, extracted server-side       | `<ulid>/<relative/path>` per extracted file    |
 
 The browser shows a choice — **Upload ZIP** vs **Extract & Browse** — whenever
 exactly one `.zip` is selected; "Upload ZIP" is the default. The CLI mirrors
@@ -97,10 +97,10 @@ Before anything is decompressed:
 - the central directory's own declared uncompressed size is checked against
   the artifact size limit as a cheap early rejection.
 
-That last check is *not* the real defense against zip bombs — a crafted
+That last check is _not_ the real defense against zip bombs — a crafted
 archive can simply lie about its own declared size. The real defense is that
 decompression happens through `fflate`'s **streaming** inflate, with a shared
-byte counter charged against every chunk of *actual* decompressed output as
+byte counter charged against every chunk of _actual_ decompressed output as
 it's produced; the moment the running total would exceed the artifact-size
 limit, extraction aborts immediately, regardless of what the archive's
 metadata claimed. `worker/lib/zip.test.ts` has a regression test that
@@ -125,7 +125,7 @@ could never run with the management UI's privileges. That was deliberately
 simplified away, and HTML/images/etc. are meant to be directly viewable —
 that's the point of the tool. Isolation instead comes from a narrower
 realization: a browser only ever executes embedded `<script>` when it parses
-a response *as HTML or SVG*. A `.js`/`.css` file opened directly just
+a response _as HTML or SVG_. A `.js`/`.css` file opened directly just
 displays as text; `<script src>`/`<img>`/`<link>` subresource loads ignore
 `Content-Disposition` entirely and load regardless. So HTML and SVG are the
 only two types that need real containment:
@@ -138,10 +138,10 @@ only two types that need real containment:
   directly in the browser. Only genuinely unrenderable/binary types (ZIP,
   gzip, tar, wasm, fonts, unknown extensions) are forced to download.
 - **HTML and SVG responses additionally get `Content-Security-Policy:
-  sandbox allow-scripts allow-forms allow-popups
-  allow-popups-to-escape-sandbox allow-modals`.** Any embedded script still
+sandbox allow-scripts allow-forms allow-popups
+allow-popups-to-escape-sandbox allow-modals`.** Any embedded script still
   runs (so uploaded pages/demos work), but the CSP `sandbox` directive puts
-  the document in a unique, opaque origin — deliberately *without*
+  the document in a unique, opaque origin — deliberately _without_
   `allow-same-origin`. That means a script in an uploaded page cannot read
   this origin's cookies/storage, and any `fetch`/`XHR` it makes back to
   `/api/*` is treated as cross-origin (no `Access-Control-Allow-Origin` is
@@ -178,7 +178,7 @@ router is caught centrally and turned into a generic `500`).
 **What's accepted as a tradeoff, given no auth**: since there's no session or
 token, the traditional CSRF story doesn't really apply — any client, friendly
 or hostile, has equal standing to upload or delete. No CORS headers are set,
-so a script on another origin can't *read* API responses, but a plain HTML
+so a script on another origin can't _read_ API responses, but a plain HTML
 form can still POST an upload cross-origin (as it could against any
 unauthenticated endpoint). This is a direct consequence of the "public,
 no-auth" decision, not a separate bug.
@@ -209,6 +209,7 @@ drop-share/
 ├── worker/**/*.test.ts        vitest (Workers runtime) unit + integration tests
 ├── .github/workflows/
 │   └── publish-cli.yml        builds cli/ and runs `npm publish` on a cli-v* tag
+├── .claude/skills/publish-artifact/SKILL.md  /publish-artifact in Claude Code (see below)
 ├── wrangler.jsonc
 └── worker-configuration.d.ts  generated by `wrangler types` — do not hand-edit
 ```
@@ -268,7 +269,7 @@ drop-share upload ./photo.png --server https://your-domain
 neither is given, the CLI defaults to `https://artifacts.msar.dev` — this
 maintainer's own instance. Since that server has no authentication (see
 "Security model" above), leaving `--server`/`ARTIFACT_SERVER` unset means
-anyone running this published CLI uploads to *that* instance by default.
+anyone running this published CLI uploads to _that_ instance by default.
 Point `--server` at your own deployment if you don't want that.
 
 **Publishing a new CLI version** (maintainers): push a tag matching
@@ -288,18 +289,56 @@ npm run build
 node dist/index.js upload ../README.md --server http://localhost:5173
 ```
 
+## Claude Code integration
+
+This repo ships a [Claude Code](https://claude.com/claude-code) skill at
+`.claude/skills/publish-artifact/SKILL.md`. With this project open in Claude
+Code, typing `/publish-artifact <path>` runs `npx drop-and-share upload
+<path>` and reports back the resulting artifact URL — a quick way to share
+a file, ZIP, or build output straight from a Claude Code session.
+
+It's project-scoped, so it's only available when this repo is open. To use
+it from _any_ project instead, copy the same file to your personal skills
+directory:
+
+```bash
+mkdir -p ~/.claude/skills/publish-artifact
+cp .claude/skills/publish-artifact/SKILL.md ~/.claude/skills/publish-artifact/SKILL.md
+```
+
+Global skill installation is also possible with a single command, without needing a local copy of this repo:
+
+```bash
+# Curl / wget command to install the skill from this repo directly (no local copy needed):
+curl -fsSL https://raw.githubusercontent.com/4msar/drop-share/main/.claude/skills/publish-artifact/SKILL.md -o ~/.claude/skills/publish-artifact/SKILL.md
+
+# Or, if you prefer wget:
+wget -qO ~/.claude/skills/publish-artifact/SKILL.md https://raw.githubusercontent.com/4msar/drop-share/main/.claude/skills/publish-artifact/SKILL.md
+```
+
+Install in specific project directories by replacing `~/.claude/skills` with the path to that project. The skill is self-contained and doesn't depend on anything else in this repo, so it can be copied to any project directory and used there.
+
+```bash
+# Install the skill in a specific project directory
+mkdir -p /path/to/project/.claude/skills/publish-artifact
+cp .claude/skills/publish-artifact/SKILL.md /path/to/project/.claude/skills/publish-artifact/SKILL.md
+```
+
+That's also how anyone else using Claude Code can pick it up — the file is
+self-contained and doesn't depend on anything else in this repo.
+
 ## Deploying
 
 1. Create the R2 bucket (name must match `bucket_name` in `wrangler.jsonc`,
    or edit it to match a bucket you already have):
-   ```bash
-   npx wrangler r2 bucket create drop-share-artifacts
-   ```
+    ```bash
+    npx wrangler r2 bucket create drop-share-artifacts
+    ```
 2. Update `PUBLIC_BASE_URL` in `wrangler.jsonc` to your real domain.
 3. Deploy:
-   ```bash
-   npm run deploy
-   ```
+    ```bash
+    npm run deploy
+    ```
 4. In the Cloudflare dashboard, attach your domain to the Worker (**Workers &
    Pages → drop-share → Settings → Domains & Routes**), or add a `routes`
    entry to `wrangler.jsonc` and redeploy.
@@ -320,7 +359,7 @@ each one as you go.
 - **No authentication**, by design (see "Security model").
 - **Directory-listing pages are not cached** (`Cache-Control: no-store`), so a
   deleted artifact's listing disappears immediately on reload — but the raw
-  file bytes *are* cached immutably for a year, so a client or CDN that
+  file bytes _are_ cached immutably for a year, so a client or CDN that
   already cached a specific file's response before a delete may still serve
   it until that cache entry expires. This is an inherent tension between
   "immutable, cache forever" and "deletable," and is accepted as documented
