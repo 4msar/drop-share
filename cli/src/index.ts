@@ -26,7 +26,7 @@ interface UploadResult {
 }
 
 function printUsageAndExit(): never {
-  console.error("Usage: artifact upload <path> [--server <url>] [--extract] [--name <name>]");
+  console.error("Usage: drop-share upload <path> [--server <url>] [--extract] [--name <name>]");
   console.error("");
   console.error("Environment: ARTIFACT_SERVER can be set instead of passing --server.");
   process.exit(1);
