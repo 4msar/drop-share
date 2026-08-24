@@ -1,3 +1,5 @@
+import { formatBytes } from "./format";
+
 export const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024;
 export const MAX_ARTIFACT_SIZE_BYTES = 10 * 1024 * 1024;
 
@@ -16,18 +18,6 @@ export interface Selection {
 export interface UploadResult {
   id: string;
   url: string;
-}
-
-export function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  const units = ["KB", "MB", "GB"];
-  let value = bytes / 1024;
-  let unitIndex = 0;
-  while (value >= 1024 && unitIndex < units.length - 1) {
-    value /= 1024;
-    unitIndex++;
-  }
-  return `${value.toFixed(value < 10 ? 1 : 0)} ${units[unitIndex]}`;
 }
 
 /** Reads a plain <input type="file"> selection: flat files, no folder structure. */

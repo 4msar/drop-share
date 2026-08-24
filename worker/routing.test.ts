@@ -51,3 +51,28 @@ describe("artifact path parsing", () => {
     expect(response.status).toBe(404);
   });
 });
+
+// Directory URLs hand off to the SPA shell, which needs built client assets
+// and so cannot be exercised here (env.ASSETS is unavailable under vitest).
+// What is testable - and what actually matters - is that the Worker still
+// rejects bad artifact paths *before* reaching that handoff, rather than
+// answering 200 for every `/a/<anything>/`.
+describe("directory requests are validated before the SPA shell is served", () => {
+  it("404s a directory request for an artifact that does not exist", async () => {
+    const response = await fetchWith(`/a/${VALID_ID}/`);
+    expect(response.status).toBe(404);
+  });
+
+  it("404s a directory request for a malformed artifact id", async () => {
+    expect((await fetchWith("/a/not-a-ulid/")).status).toBe(404);
+  });
+
+  it("404s a directory request whose sub-path escapes the artifact", async () => {
+    // %2f is not decoded by the URL parser, so "%2e%2e%2f" stays a single
+    // segment rather than being collapsed as a double-dot segment. That is
+    // what makes this reach the app's own normalizeRelativePath defense
+    // instead of being rewritten away before routing.
+    const response = await fetchWith(`/a/${VALID_ID}/%2e%2e%2f/`);
+    expect(response.status).toBe(404);
+  });
+});

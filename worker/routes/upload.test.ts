@@ -121,9 +121,13 @@ describe("POST /api/upload: mode=directory", () => {
     const cssResponse = await exports.default.fetch(`https://artifacts.example.com${body.url}css/style.css`);
     expect(await cssResponse.text()).toBe("body{}");
 
-    const dirPage = await exports.default.fetch(`https://artifacts.example.com${body.url}`);
-    expect(dirPage.status).toBe(200);
-    expect(dirPage.headers.get("content-type")).toContain("text/html");
+    // The directory URL itself now serves the SPA shell, so what proves the
+    // artifact is browsable is the listing the viewer draws itself from.
+    const listing = await exports.default.fetch(`https://artifacts.example.com/api/artifact/${body.id}`);
+    expect(listing.status).toBe(200);
+    const listingBody = await listing.json();
+    expect(listingBody.files.map((f: { name: string }) => f.name)).toContain("index.html");
+    expect(listingBody.directories.sort()).toEqual(["css/", "js/"]);
   });
 
   it("rejects an unsafe relative path inside a directory upload", async () => {

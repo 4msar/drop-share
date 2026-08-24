@@ -37,8 +37,16 @@ after it completes.
 ```
 https://your-domain/                     upload UI (React)
 https://your-domain/a/<ulid>/             artifact viewer: file list (left) + live preview (right)
-https://your-domain/a/<ulid>/some/path    a specific file inside the artifact
+https://your-domain/a/<ulid>/some/path/   a folder inside the artifact (viewer)
+https://your-domain/a/<ulid>/some/file    a specific file inside the artifact (raw bytes)
 ```
+
+The trailing slash is load-bearing: a path ending in `/` is a **page**, served
+as the React app's shell and filled in from `GET /api/artifact/:id?path=...`;
+a path without one is **raw bytes**, served by the Worker with that file's own
+`Content-Type`, `Content-Disposition`, `ETag` and (for HTML/SVG) sandbox CSP.
+Because a file URL is a plain document request, the client-side router never
+sees it — which is what keeps uploaded files out of the app's own origin.
 
 `<ulid>` is a 26-character, sortable, cryptographically-random identifier. It
 is never derived from the uploaded filename, so filenames never collide.
@@ -161,20 +169,36 @@ allow-popups-to-escape-sandbox allow-modals`.** Any embedded script still
   header instead of a second hostname.
 - `X-Content-Type-Options: nosniff` is set on every file response so browsers
   can't override the declared type through content sniffing.
-- Directory-listing pages HTML-escape every filename before rendering
-  (`escapeHtml`), since a filename is attacker-controlled text.
+- Filenames are attacker-controlled text, so they are never interpolated into
+  markup as a string. The viewer is React, which escapes them as text nodes;
+  the one remaining server-rendered page (the markdown preview) still passes
+  its title through `escapeHtml`.
 
-**The artifact viewer** (`/a/:id/`) is a two-pane page: a file/folder list on
-the left, a live preview pane on the right. Clicking a previewable file loads
-it into an `<iframe>` on the right (client-side, no page reload) and
-highlights it in the list; clicking a folder navigates normally. A file that
-isn't previewable (a ZIP, a binary) has no click handler at all — the browser
-just downloads it via the `Content-Disposition` set on that URL. The default
-preview on load is `index.html` if one exists at that level, otherwise the
-first previewable file, otherwise a placeholder. The preview iframe is just
-pointed at the same `/a/:id/...` file URLs described above, so it inherits
-all the same headers (sandbox CSP for HTML/SVG, correct content type, etc.) —
-the viewer adds no new attack surface of its own.
+**The artifact viewer** (`/a/:id/`) is a two-pane React route: a file/folder
+list on the left, a live preview pane on the right. Clicking a previewable
+file loads it into an `<iframe>` on the right and highlights it in the list;
+clicking a folder is a client-side navigation. A file that isn't previewable
+(a ZIP, a binary) has no click handler at all — the browser just downloads it
+via the `Content-Disposition` set on that URL. The default preview on load is
+`index.html` if one exists at that level, otherwise the first previewable
+file, otherwise a placeholder.
+
+Two decisions keep the move to a client-rendered viewer from widening the
+attack surface:
+
+- **`previewable` is decided server-side.** The listing API returns a
+  `previewable` flag per file, derived from the same `isInlineSafe` allowlist
+  the file responses use. The browser never re-implements that predicate, so
+  the two copies can't drift apart.
+- **Markdown is still rendered by the Worker** (`?render=html`), not in React.
+  Markdown can embed raw HTML and `<script>`; rendering it in the app would
+  execute that script on this site's own origin. Served from the Worker it
+  lands in an `<iframe>` under the same sandbox CSP as uploaded HTML, in an
+  opaque origin.
+
+The preview iframe is just pointed at the same `/a/:id/...` file URLs described
+above, so it inherits all the same headers (sandbox CSP for HTML/SVG, correct
+content type, etc.).
 
 **Other things checked**: path traversal and ZIP-slip (shared
 `normalizeRelativePath`, exercised by both regular uploads and ZIP entries);
@@ -199,7 +223,7 @@ no-auth" decision, not a separate bug.
 ```
 drop-share/
 ├── worker/
-│   ├── index.ts              router: /api/*, /a/:id/*, static asset fallback
+│   ├── index.ts              Hono router: /api/*, /a/:id/*, static asset fallback
 │   ├── lib/
 │   │   ├── ids.ts             ULID generation/validation
 │   │   ├── paths.ts           safe relative-path normalization (traversal defense)
@@ -210,14 +234,23 @@ drop-share/
 │   │   └── http.ts            jsonOk/jsonError/escapeHtml
 │   └── routes/
 │       ├── upload.ts          POST /api/upload (all four modes)
-│       ├── browse.ts          GET/DELETE for /a/:id/* and /api/artifact/:id
+│       ├── browse.ts          file bytes, markdown render, listing JSON, delete
 │       └── health.ts
-├── src/                       React upload UI (Vite)
-│   ├── App.tsx / App.css
-│   └── upload.ts              drag/drop + directory-entry traversal, XHR upload w/ progress
+├── src/                       React + Tailwind client (Vite)
+│   ├── App.tsx                react-router: / and /a/:id/*
+│   ├── index.css              Tailwind v4 entry + theme tokens (light/dark)
+│   ├── routes/
+│   │   ├── UploadPage.tsx     drop zone, ZIP choice, progress, result
+│   │   └── ViewerPage.tsx     two-pane artifact viewer
+│   ├── components/            Button, FileList, PreviewPane, ProgressBar, UploadIcon
+│   └── lib/
+│       ├── upload.ts          drag/drop + directory-entry traversal, XHR upload w/ progress
+│       ├── artifact.ts        listing fetch, delete, add-files, preview selection
+│       └── format.ts          byte formatting, file glyphs
 ├── cli/                       published to npm as drop-and-share (zero runtime deps)
 │   └── src/index.ts
 ├── worker/**/*.test.ts        vitest (Workers runtime) unit + integration tests
+├── src/**/*.test.tsx          vitest (jsdom + Testing Library) component tests
 ├── .github/workflows/
 │   └── publish-cli.yml        builds cli/ and runs `npm publish` on a cli-v* tag
 ├── .claude/skills/publish-artifact/SKILL.md  /publish-artifact in Claude Code (see below)
@@ -246,7 +279,9 @@ curl -X DELETE http://localhost:5173/api/artifact/<id>
 Run the test suite and typecheck:
 
 ```bash
-npm test        # vitest, runs inside the real Workers runtime (@cloudflare/vitest-plugin)
+npm test        # both vitest projects: "worker" (real Workers runtime) + "client" (jsdom)
+npm test -- --project worker   # just the Worker tests
+npm test -- --project client   # just the React component tests
 npm run build   # tsc -b && vite build — also serves as a full typecheck + production build
 npm run lint
 ```
@@ -380,9 +415,17 @@ each one as you go.
   serves the full body. Fine at a 10 MB artifact cap; would matter at larger
   sizes.
 - **No authentication**, by design (see "Security model").
-- **Directory-listing pages are not cached** (`Cache-Control: no-store`), so a
-  deleted or updated artifact's listing reflects the change immediately on
-  reload.
+- **Artifact listings are not cached** (`Cache-Control: no-store` on
+  `GET /api/artifact/:id`), so a deleted or updated artifact's contents
+  reflect the change immediately on reload.
+- **The viewer needs JavaScript.** Directory URLs serve the SPA shell, so a
+  crawler or no-JS client sees an empty page rather than a file list, and
+  first paint costs a JS parse plus one listing fetch. Accepted in exchange
+  for a single React codebase across both pages.
+- **A directory page view costs one extra R2 `list()`** (limit 1), used to
+  confirm the artifact exists before serving the shell. Without it every
+  `/a/<anything>/` would answer HTTP 200, which misleads link checkers and
+  chat unfurlers.
 - **Artifacts can be updated in place** (add new files, or overwrite
   existing ones by path — an update never deletes a file that isn't part
   of the new upload) via `/api/upload`'s optional `id` field, the viewer's
