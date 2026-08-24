@@ -6,6 +6,7 @@ immutable public URL.
 
 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/4msar/drop-share)
 [![Cloudflare Deployment Status](https://img.shields.io/website?down_color=lightgrey&down_message=down&label=cloudflare%20deployment&logo=cloudflare&logoColor=white&up_color=orange&up_message=up&url=https%3A%2F%2Fartifacts.msar.dev%2Fapi%2Fhealth)](https://artifacts.msar.dev/api/health)
+[![Cloudflare Deploy Check](https://img.shields.io/github/check-runs/4msar/drop-share/main?checkName=Cloudflare%20Workers&label=cloudflare%20deploy%20check)](https://github.com/4msar/drop-share/commits/main)
 
 That button walks you through connecting your own Cloudflare account and
 deploying this Worker from this repo. It still won't set your real domain
