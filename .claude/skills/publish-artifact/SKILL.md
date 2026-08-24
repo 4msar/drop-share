@@ -30,6 +30,7 @@ Publish a local artifact to drop-share.
    the command's output.
 4. If it fails, show the user the exact error line from the command's
    output. Don't retry silently or reinterpret the error.
+5. If the current chat has already an artifact published, keep the id so next time you can use it for update or new upload.
 
 Reference notes (don't recite this whole block back to the user unless it's
 directly relevant to what happened):
