@@ -14,7 +14,11 @@ import {
     listArtifactChildren,
 } from "../lib/r2.js";
 
-const IMMUTABLE_CACHE_CONTROL = "public, max-age=31536000, immutable";
+// Files can now be updated in place (see the artifact re-upload feature), so
+// responses must always revalidate rather than being cached as immutable -
+// the strong ETag (set alongside this on raw file responses) still makes an
+// unchanged file's revalidation a cheap 304.
+const FILE_CACHE_CONTROL = "public, max-age=0, must-revalidate";
 const MARKDOWN_CONTENT_TYPE = "text/markdown; charset=utf-8";
 const SANDBOX_CSP =
     "sandbox allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox allow-modals";
@@ -117,6 +121,14 @@ async function serveFile(
         return jsonError(404, "File not found");
     }
 
+    const ifNoneMatch = request.headers.get("if-none-match");
+    if (ifNoneMatch !== null && ifNoneMatch === object.httpEtag) {
+        return new Response(null, {
+            status: 304,
+            headers: { "Cache-Control": FILE_CACHE_CONTROL, ETag: object.httpEtag },
+        });
+    }
+
     const contentType =
         object.httpMetadata?.contentType ?? getContentType(normalizedPath);
     const filename = normalizedPath.split("/").pop() ?? normalizedPath;
@@ -137,7 +149,7 @@ async function serveFile(
             dispositionType,
             filename,
         ),
-        "Cache-Control": IMMUTABLE_CACHE_CONTROL,
+        "Cache-Control": FILE_CACHE_CONTROL,
         "X-Content-Type-Options": "nosniff",
         ETag: object.httpEtag,
     });
@@ -186,10 +198,11 @@ function renderMarkdownFile(
     const page = renderMarkdownPreviewPage(filename, bodyHtml);
     const headers = new Headers({
         "Content-Type": "text/html; charset=utf-8",
-        // The R2 object behind this render is immutable, and markdown can embed
-        // raw HTML/<script>, so this gets the same sandbox CSP as uploaded
-        // HTML/SVG - the browser has already committed to running it as HTML.
-        "Cache-Control": IMMUTABLE_CACHE_CONTROL,
+        // This response is derived from R2 content that can now change (see the
+        // artifact update feature), and markdown can embed raw HTML/<script>, so
+        // it gets the same sandbox CSP as uploaded HTML/SVG - the browser has
+        // already committed to running it as HTML.
+        "Cache-Control": FILE_CACHE_CONTROL,
         "Content-Security-Policy": SANDBOX_CSP,
     });
     if (method === "HEAD") return new Response(null, { status: 200, headers });
@@ -286,6 +299,51 @@ const DELETE_SCRIPT = `
         setTimeout(() => { window.location.href = '/'; }, 3000);
       } else {
         alert('Failed to delete artifact.');
+      }
+    });
+  });
+</script>`;
+
+const UPLOAD_SCRIPT = `
+<script>
+  document.querySelectorAll('[data-upload]').forEach((btn) => {
+    const input = document.getElementById('upload-input');
+    if (!input) return;
+    const originalLabel = btn.textContent;
+
+    btn.addEventListener('click', () => input.click());
+
+    input.addEventListener('change', async () => {
+      const files = Array.from(input.files || []);
+      if (files.length === 0) return;
+
+      const artifactId = btn.getAttribute('data-upload-id');
+      const subPath = btn.getAttribute('data-upload-path') || '';
+      const form = new FormData();
+      form.set('mode', 'directory');
+      form.set('id', artifactId);
+      for (const file of files) {
+        form.append('files', file, subPath + file.name);
+      }
+
+      btn.disabled = true;
+      btn.textContent = 'Uploading…';
+      try {
+        const res = await fetch('/api/upload', { method: 'POST', body: form });
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok || !body.success) {
+          alert(body.error || 'Upload failed.');
+          btn.disabled = false;
+          btn.textContent = originalLabel;
+          input.value = '';
+          return;
+        }
+        window.location.reload();
+      } catch (err) {
+        alert('Upload failed.');
+        btn.disabled = false;
+        btn.textContent = originalLabel;
+        input.value = '';
       }
     });
   });
@@ -496,8 +554,10 @@ function renderArtifactViewerPage(
     <p class="meta">${fileCountLabel}${folderCountLabel}</p>
   </div>
   <div class="header-actions">
+    <button class="btn" data-upload data-upload-id="${escapeHtml(id)}" data-upload-path="${escapeHtml(subPath)}">Upload More</button>
+    <input type="file" id="upload-input" multiple hidden>
     <button class="btn" data-share>Share</button>
-    ${isRoot ? `<button class="btn danger" data-delete-artifact="${escapeHtml(id)}">Delete artifact</button>` : ""}
+    ${isRoot ? `<button class="btn danger" data-delete-artifact="${escapeHtml(id)}">Delete</button>` : ""}
   </div>
 </header>
 <div class="viewer">
@@ -513,6 +573,7 @@ function renderArtifactViewerPage(
   </section>
 </div>
 ${PREVIEW_SCRIPT}
+${UPLOAD_SCRIPT}
 ${SHARE_SCRIPT}
 ${DELETE_SCRIPT}`;
 

@@ -42,24 +42,30 @@ export async function listArtifactChildren(
   return { files, directories };
 }
 
-/** Lists every object key under an artifact id, regardless of nesting - used for delete and existence checks. */
-export async function listAllArtifactKeys(bucket: R2Bucket, artifactId: string): Promise<string[]> {
+export interface ArtifactObjectRef {
+  key: string;
+  size: number;
+}
+
+/** Lists every object (key + size) under an artifact id, regardless of nesting - used for delete, existence checks, and total-size accounting. */
+export async function listAllArtifactKeys(bucket: R2Bucket, artifactId: string): Promise<ArtifactObjectRef[]> {
   const prefix = `${artifactId}/`;
-  const keys: string[] = [];
+  const refs: ArtifactObjectRef[] = [];
   let cursor: string | undefined;
 
   do {
     const page = await bucket.list({ prefix, cursor });
-    keys.push(...page.objects.map((object) => object.key));
+    refs.push(...page.objects.map((object) => ({ key: object.key, size: object.size })));
     cursor = page.truncated ? page.cursor : undefined;
   } while (cursor);
 
-  return keys;
+  return refs;
 }
 
 /** Deletes every object belonging to an artifact. The artifact id itself is never reused afterwards. */
 export async function deleteArtifact(bucket: R2Bucket, artifactId: string): Promise<number> {
-  const keys = await listAllArtifactKeys(bucket, artifactId);
+  const refs = await listAllArtifactKeys(bucket, artifactId);
+  const keys = refs.map((ref) => ref.key);
   for (let i = 0; i < keys.length; i += DELETE_BATCH_SIZE) {
     await bucket.delete(keys.slice(i, i + DELETE_BATCH_SIZE));
   }

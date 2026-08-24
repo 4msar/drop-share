@@ -2,7 +2,7 @@
 
 Command-line uploader for [drop-share](https://github.com/4msar/drop-share) —
 upload a file, a ZIP, or a whole folder to a drop-share server and get back
-an immutable artifact URL. Published to npm as `drop-and-share`; the command
+a shareable artifact URL. Published to npm as `drop-and-share`; the command
 it installs is `drop-share`.
 
 Zero runtime dependencies: it only uses Node's own `fs`/`path` and the
@@ -33,7 +33,8 @@ This gives you a `drop-share` binary directly on your PATH.
 ## Usage
 
 ```
-drop-share upload <path> [--server <url>] [--extract] [--name <name>]
+drop-share upload <path> [--server <url>] [--extract] [--name <name>] [--new]
+drop-share update <path> [--server <url>] [--extract] [--id <id>]
 ```
 
 | Argument / option    | Description |
@@ -42,6 +43,15 @@ drop-share upload <path> [--server <url>] [--extract] [--name <name>]
 | `--server <url>`      | The drop-share server to upload to. Can be set via `ARTIFACT_SERVER` instead. Defaults to `https://artifacts.msar.dev` if neither is given. |
 | `--extract`           | Only applies to a `.zip` file: extract it server-side into a browsable artifact instead of uploading it unchanged. |
 | `--name <name>`       | Override the display/stored filename for a single-file upload. |
+| `--new` (`upload` only) | Force publishing a brand-new artifact even if this path was published before. |
+| `--id <id>` (`update` only) | Update a specific artifact id directly, instead of looking up the one saved for this path. |
+
+Running `drop-share upload <path>` again on a path you've published before
+**updates that same artifact** (adding new files, overwriting changed ones,
+leaving everything else untouched) instead of creating a new one —
+drop-share remembers what you published, in `~/.drop-share/state.json`. Use
+`drop-share update <path>` to be explicit about updating, or `--new` to
+force a fresh artifact.
 
 `ARTIFACT_SERVER` can be set in your shell profile so you don't have to pass
 `--server` on every call:
@@ -74,7 +84,7 @@ drop-share upload ./release.zip --extract --server https://your-domain
 drop-share upload ./my-project/ --server https://your-domain
 ```
 
-On success it prints the artifact's immutable URL:
+On success it prints the artifact's URL:
 
 ```
 Uploading release.zip (4.2 MB)...
@@ -97,8 +107,9 @@ the one that actually matters and can't be bypassed by skipping the CLI.
 - **Folders**: enumerated recursively; relative paths are preserved and
   sent as-is (never the local absolute filesystem path). Symlinks are
   skipped with a warning rather than followed.
-- **Duplicate uploads**: uploading the same path twice always creates two
-  distinct artifacts with two distinct URLs — nothing is ever overwritten.
+- **Re-uploading the same path**: updates the artifact created by the
+  previous upload of that path (see `drop-share update` above) instead of
+  creating a new one, unless you pass `--new`.
 - **No authentication**: this CLI talks to a drop-share server that has no
   auth by design (see the [main README](https://github.com/4msar/drop-share#security-model-read-this-before-deploying-publicly)).
   Anyone who can reach the server can upload; point `--server` at a server

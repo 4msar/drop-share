@@ -4,8 +4,9 @@
 [![Cloudflare Deploy Check](https://img.shields.io/github/check-runs/4msar/drop-share/main?checkName=Cloudflare%20Workers&label=Deployment&logo=cloudflare&logoColor=brand&up_color=orange)](https://github.com/4msar/drop-share/commits/main)
 
 A personal artifact-sharing service on Cloudflare Workers + R2. Drop a file, a
-ZIP, or a folder in the browser (or via the `drop-share` CLI) and get back an
-immutable public URL.
+ZIP, or a folder in the browser (or via the `drop-share` CLI) and get back a
+public URL — re-uploading the same file or folder later updates it in place
+instead of creating a new artifact.
 
 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/4msar/drop-share)
 
@@ -120,7 +121,7 @@ this path — not just the cheap metadata check — is what actually stops it.
 ## Security model (read this before deploying publicly)
 
 **There is no authentication.** Anyone with network access to the Worker can
-upload, browse, and delete artifacts. This is an explicit product decision
+upload, browse, update, and delete artifacts. This is an explicit product decision
 for a personal/trusted-audience tool, not a partial implementation — do not
 deploy this to a domain you'd mind being used as an open drop box. If you
 need access control later, the natural place to add it is
@@ -187,7 +188,7 @@ router is caught centrally and turned into a generic `500`).
 
 **What's accepted as a tradeoff, given no auth**: since there's no session or
 token, the traditional CSRF story doesn't really apply — any client, friendly
-or hostile, has equal standing to upload or delete. No CORS headers are set,
+or hostile, has equal standing to upload, update, or delete. No CORS headers are set,
 so a script on another origin can't _read_ API responses, but a plain HTML
 form can still POST an upload cross-origin (as it could against any
 unauthenticated endpoint). This is a direct consequence of the "public,
@@ -373,12 +374,17 @@ each one as you go.
   sizes.
 - **No authentication**, by design (see "Security model").
 - **Directory-listing pages are not cached** (`Cache-Control: no-store`), so a
-  deleted artifact's listing disappears immediately on reload — but the raw
-  file bytes _are_ cached immutably for a year, so a client or CDN that
-  already cached a specific file's response before a delete may still serve
-  it until that cache entry expires. This is an inherent tension between
-  "immutable, cache forever" and "deletable," and is accepted as documented
-  behavior rather than solved.
+  deleted or updated artifact's listing reflects the change immediately on
+  reload.
+- **Artifacts can be updated in place** (add new files, or overwrite
+  existing ones by path — an update never deletes a file that isn't part
+  of the new upload) via `/api/upload`'s optional `id` field, the viewer's
+  Upload button, or the CLI's `update` command / auto-update-on-reupload.
+  Individual file responses are served with
+  `Cache-Control: public, max-age=0, must-revalidate` (not `immutable`),
+  so a client revalidates against the file's ETag before using a cached
+  copy — an update is reflected on the client's next load rather than
+  staying stale for up to a year.
 - **Zip64 (>4 GB entries) is not specially parsed** — irrelevant at a 10 MB
   cap, but a zip64 sentinel size is treated as "definitely over the limit"
   rather than actually decoded.

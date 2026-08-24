@@ -1,6 +1,6 @@
 {
   "name": "drop-and-share",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "CLI for uploading files, ZIPs, and folders to a drop-share instance",
   "type": "module",
   "bin": {
@@ -14,10 +14,13 @@
   },
   "scripts": {
     "build": "tsc",
-    "start": "node dist/index.js"
+    "start": "node dist/index.js",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "devDependencies": {
     "@types/node": "^24.13.3",
-    "typescript": "~5.7.3"
+    "typescript": "~5.7.3",
+    "vitest": "^4.1.11"
   }
 }

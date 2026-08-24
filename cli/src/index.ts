@@ -1,19 +1,14 @@
 #!/usr/bin/env node
-import { basename, join, resolve } from "node:path";
+import { basename, join } from "node:path";
 import { readFileSync, readdirSync, statSync } from "node:fs";
+import { type Args, parseArgs } from "./args.js";
+import { NoSavedArtifactError, type UploadPlan, planUpload } from "./plan.js";
+import { defaultStatePath, getEntry, removeEntry, setEntry } from "./state.js";
 
 const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024;
 const MAX_ARTIFACT_SIZE_BYTES = 10 * 1024 * 1024;
-const DEFAULT_SERVER = "https://artifacts.msar.dev";
 
 type UploadMode = "file" | "zip" | "zip-extract" | "directory";
-
-interface Args {
-  targetPath: string;
-  server: string;
-  extract: boolean;
-  name?: string;
-}
 
 interface DirectoryEntry {
   relativePath: string;
@@ -26,39 +21,14 @@ interface UploadResult {
   url: string;
 }
 
-function printUsageAndExit(): never {
-  console.error("Usage: drop-share upload <path> [--server <url>] [--extract] [--name <name>]");
-  console.error("");
-  console.error(`Environment: ARTIFACT_SERVER can be set instead of passing --server.`);
-  console.error(`Defaults to ${DEFAULT_SERVER} if neither is given.`);
-  process.exit(1);
-}
-
-function parseArgs(argv: string[]): Args {
-  const [command, rawTargetPath, ...rest] = argv;
-  if (command !== "upload" || !rawTargetPath) {
-    printUsageAndExit();
+class UploadHttpError extends Error {
+  constructor(
+    public readonly status: number,
+    message: string,
+  ) {
+    super(message);
+    this.name = "UploadHttpError";
   }
-
-  let server = process.env.ARTIFACT_SERVER ?? DEFAULT_SERVER;
-  let extract = false;
-  let name: string | undefined;
-
-  for (let i = 0; i < rest.length; i++) {
-    const arg = rest[i];
-    if (arg === "--server") {
-      server = rest[++i] ?? server;
-    } else if (arg === "--extract") {
-      extract = true;
-    } else if (arg === "--name") {
-      name = rest[++i];
-    } else {
-      console.error(`Unknown option: ${arg}`);
-      printUsageAndExit();
-    }
-  }
-
-  return { targetPath: resolve(rawTargetPath), server: server.replace(/\/+$/, ""), extract, name };
 }
 
 function formatBytes(bytes: number): string {
@@ -122,41 +92,51 @@ async function postUpload(server: string, form: FormData): Promise<UploadResult>
   try {
     body = (await response.json()) as typeof body;
   } catch {
-    throw new Error(`Upload failed (HTTP ${response.status})`);
+    throw new UploadHttpError(response.status, `Upload failed (HTTP ${response.status})`);
   }
   if (!response.ok || !body.success || !body.id || !body.url) {
-    throw new Error(body.error ?? `Upload failed (HTTP ${response.status})`);
+    throw new UploadHttpError(response.status, body.error ?? `Upload failed (HTTP ${response.status})`);
   }
   return { id: body.id, url: body.url };
 }
 
-async function uploadSingleFile(server: string, absolutePath: string, mode: UploadMode, displayName: string) {
+async function uploadSingleFile(
+  server: string,
+  absolutePath: string,
+  mode: UploadMode,
+  displayName: string,
+  artifactId: string | undefined,
+): Promise<UploadResult> {
   const form = new FormData();
   form.set("mode", mode);
+  if (artifactId) form.set("id", artifactId);
   form.append("files", new Blob([readFileSync(absolutePath)]), displayName);
   return postUpload(server, form);
 }
 
-async function uploadDirectory(server: string, entries: DirectoryEntry[]) {
+async function uploadDirectory(
+  server: string,
+  entries: DirectoryEntry[],
+  artifactId: string | undefined,
+): Promise<UploadResult> {
   const form = new FormData();
   form.set("mode", "directory");
+  if (artifactId) form.set("id", artifactId);
   for (const entry of entries) {
     form.append("files", new Blob([readFileSync(entry.absolutePath)]), entry.relativePath);
   }
   return postUpload(server, form);
 }
 
-function printSuccess(server: string, result: UploadResult): void {
+function printResult(server: string, result: UploadResult, label: string): void {
   console.log("");
   console.log("Upload complete.");
   console.log("");
-  console.log("Artifact:");
+  console.log(label);
   console.log(`${server}${result.url}`);
 }
 
-async function main(): Promise<void> {
-  const args = parseArgs(process.argv.slice(2));
-
+async function performUpload(args: Args, artifactId: string | undefined): Promise<UploadResult> {
   const stats = statSync(args.targetPath, { throwIfNoEntry: false });
   if (!stats) {
     console.error(`No such file or directory: ${args.targetPath}`);
@@ -173,9 +153,7 @@ async function main(): Promise<void> {
     console.log(
       `Uploading ${basename(args.targetPath)}/ (${entries.length} files, ${formatBytes(totalSize)}) to ${args.server}...`,
     );
-    const result = await uploadDirectory(args.server, entries);
-    printSuccess(args.server, result);
-    return;
+    return uploadDirectory(args.server, entries, artifactId);
   }
 
   const displayName = args.name ?? basename(args.targetPath);
@@ -185,8 +163,66 @@ async function main(): Promise<void> {
 
   const modeLabel = mode === "zip-extract" ? " (extract & browse)" : "";
   console.log(`Uploading ${displayName} (${formatBytes(stats.size)})${modeLabel} to ${args.server}...`);
-  const result = await uploadSingleFile(args.server, args.targetPath, mode, displayName);
-  printSuccess(args.server, result);
+  return uploadSingleFile(args.server, args.targetPath, mode, displayName, artifactId);
+}
+
+/** Resolves the upload/update decision up front, exiting cleanly (no network call) if `update` has nothing to target. */
+function resolvePlan(args: Args, existing: ReturnType<typeof getEntry>): UploadPlan {
+  try {
+    return planUpload(args, existing);
+  } catch (error) {
+    if (error instanceof NoSavedArtifactError) {
+      console.error(error.message);
+      process.exit(1);
+    }
+    throw error;
+  }
+}
+
+function saveResult(statePath: string, args: Args, result: UploadResult): void {
+  setEntry(statePath, args.server, args.targetPath, {
+    id: result.id,
+    url: result.url,
+    updatedAt: new Date().toISOString(),
+  });
+}
+
+async function main(): Promise<void> {
+  const args = parseArgs(process.argv.slice(2));
+  const statePath = defaultStatePath();
+  const existing = getEntry(statePath, args.server, args.targetPath);
+  const plan = resolvePlan(args, existing);
+
+  const attemptId = plan.action === "update" ? plan.id : undefined;
+
+  try {
+    const result = await performUpload(args, attemptId);
+    saveResult(statePath, args, result);
+    printResult(args.server, result, plan.action === "update" ? "Updated artifact:" : "Artifact:");
+    return;
+  } catch (error) {
+    // Re-throw anything that isn't "the artifact this update targeted is
+    // gone" - including this guard clause narrows `plan` to the "update"
+    // variant for the rest of this function, so `plan.id` below is safe.
+    if (!(error instanceof UploadHttpError) || error.status !== 404 || plan.action !== "update") {
+      throw error;
+    }
+
+    if (existing?.id === plan.id) {
+      removeEntry(statePath, args.server, args.targetPath);
+    }
+    if (args.command === "update") {
+      console.error(`Artifact ${plan.id} no longer exists on ${args.server}.`);
+      console.error(`Run "drop-share upload ${args.targetPath}" to publish a new one.`);
+      process.exit(1);
+    }
+  }
+
+  // Plain `upload` auto-detected a now-stale artifact - fall back to
+  // publishing a fresh one instead of failing outright.
+  const result = await performUpload(args, undefined);
+  saveResult(statePath, args, result);
+  printResult(args.server, result, "Artifact:");
 }
 
 main().catch((error: unknown) => {

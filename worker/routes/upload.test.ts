@@ -187,3 +187,101 @@ describe("POST /api/upload: validation", () => {
     expect(response.status).toBe(400);
   });
 });
+
+describe("POST /api/upload: id=<existing> (update)", () => {
+  it("overwrites a file at an existing path and adds a new path, leaving other files untouched", async () => {
+    const created = await (
+      await exports.default.fetch(
+        uploadRequest("directory", [
+          { name: "a.txt", content: "a-original" },
+          { name: "b.txt", content: "b-original" },
+        ]),
+      )
+    ).json();
+
+    const updateResponse = await exports.default.fetch(
+      uploadRequest(
+        "directory",
+        [
+          { name: "a.txt", content: "a-updated" },
+          { name: "c.txt", content: "c-new" },
+        ],
+        { id: created.id },
+      ),
+    );
+    expect(updateResponse.status).toBe(200);
+    const updated = await updateResponse.json();
+    expect(updated.id).toBe(created.id);
+
+    const a = await (await exports.default.fetch(`https://artifacts.example.com${created.url}a.txt`)).text();
+    const b = await (await exports.default.fetch(`https://artifacts.example.com${created.url}b.txt`)).text();
+    const c = await (await exports.default.fetch(`https://artifacts.example.com${created.url}c.txt`)).text();
+    expect(a).toBe("a-updated");
+    expect(b).toBe("b-original");
+    expect(c).toBe("c-new");
+  });
+
+  it("404s when the id doesn't correspond to any existing artifact", async () => {
+    const response = await exports.default.fetch(
+      uploadRequest("file", [{ name: "a.txt", content: "a" }], { id: "01ARZ3NDEKTSV4RRFFQ69G5FAV" }),
+    );
+    expect(response.status).toBe(404);
+  });
+
+  it("400s on a syntactically invalid id", async () => {
+    const response = await exports.default.fetch(
+      uploadRequest("file", [{ name: "a.txt", content: "a" }], { id: "not-a-ulid" }),
+    );
+    expect(response.status).toBe(400);
+  });
+
+  it("rejects an update whose existing-plus-new total exceeds the artifact size cap", async () => {
+    const chunk = new Uint8Array(6 * 1024 * 1024); // 6MB
+    const created = await (
+      await exports.default.fetch(uploadRequest("file", [{ name: "big.bin", content: chunk }]))
+    ).json();
+
+    // 6MB existing + 6MB new = 12MB > 10MB cap, even though neither file alone exceeds it.
+    const response = await exports.default.fetch(
+      uploadRequest("file", [{ name: "second.bin", content: chunk }], { id: created.id }),
+    );
+    expect(response.status).toBe(413);
+  });
+
+  it("rejects an update that would exceed the artifact file-count cap", async () => {
+    const files = Array.from({ length: 1999 }, (_, i) => ({ name: `f${i}.txt`, content: "" }));
+    const created = await (await exports.default.fetch(uploadRequest("directory", files))).json();
+
+    // Adding 2 more brings the total to 2001, over the 2000 file limit,
+    // even though this single request only sends 2 files.
+    const response = await exports.default.fetch(
+      uploadRequest(
+        "directory",
+        [
+          { name: "extra1.txt", content: "" },
+          { name: "extra2.txt", content: "" },
+        ],
+        { id: created.id },
+      ),
+    );
+    expect(response.status).toBe(400);
+  });
+
+  it("lands an id-scoped upload inside the subfolder the filename encodes", async () => {
+    const created = await (
+      await exports.default.fetch(
+        uploadRequest("directory", [{ name: "assets/logo.png", content: new Uint8Array([1]) }]),
+      )
+    ).json();
+
+    const response = await exports.default.fetch(
+      uploadRequest("directory", [{ name: "assets/new.txt", content: "n" }], { id: created.id }),
+    );
+    expect(response.status).toBe(200);
+
+    const fetched = await (
+      await exports.default.fetch(`https://artifacts.example.com${created.url}assets/new.txt`)
+    ).text();
+    expect(fetched).toBe("n");
+  });
+});

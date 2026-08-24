@@ -94,6 +94,23 @@ describe("GET /a/:id/* : two-pane viewer", () => {
     expect(html).not.toMatch(/<a[^>]*data-markdown-source=/);
     expect(html).toMatch(/id="preview-source-toggle"[^>]*\bhidden\b/);
   });
+
+  it("renders an upload control wired to the current artifact id and path, at the root", async () => {
+    const { url, id } = await upload("file", [{ name: "notes.txt", content: "hello" }]);
+    const html = await (await exports.default.fetch(`https://artifacts.example.com${url}`)).text();
+
+    expect(html).toContain(`data-upload-id="${id}"`);
+    expect(html).toContain(`data-upload-path=""`);
+    expect(html).toContain('type="file"');
+  });
+
+  it("scopes the upload control to the current subfolder's path", async () => {
+    const { url, id } = await upload("directory", [{ name: "assets/logo.png", content: new Uint8Array([1]) }]);
+    const html = await (await exports.default.fetch(`https://artifacts.example.com${url}assets/`)).text();
+
+    expect(html).toContain(`data-upload-id="${id}"`);
+    expect(html).toContain(`data-upload-path="assets/"`);
+  });
 });
 
 describe("GET /a/:id/* : serving and browsing", () => {
@@ -141,10 +158,23 @@ describe("GET /a/:id/* : serving and browsing", () => {
     expect(response.status).toBe(404);
   });
 
-  it("sets immutable long-lived caching on file bytes", async () => {
+  it("serves file bytes with a revalidate-always cache policy, since files can be updated in place", async () => {
     const { url } = await upload("file", [{ name: "safe.txt", content: "safe" }]);
     const response = await exports.default.fetch(`https://artifacts.example.com${url}safe.txt`);
-    expect(response.headers.get("cache-control")).toBe("public, max-age=31536000, immutable");
+    expect(response.headers.get("cache-control")).toBe("public, max-age=0, must-revalidate");
+    expect(response.headers.get("etag")).toBeTruthy();
+  });
+
+  it("returns 304 when the client's If-None-Match matches the file's current ETag", async () => {
+    const { url } = await upload("file", [{ name: "safe.txt", content: "safe" }]);
+    const first = await exports.default.fetch(`https://artifacts.example.com${url}safe.txt`);
+    const etag = first.headers.get("etag");
+    expect(etag).toBeTruthy();
+
+    const second = await exports.default.fetch(`https://artifacts.example.com${url}safe.txt`, {
+      headers: { "If-None-Match": etag! },
+    });
+    expect(second.status).toBe(304);
   });
 
   it("does not cache directory/browse HTML pages long-term", async () => {
