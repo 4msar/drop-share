@@ -2,6 +2,7 @@
 import { basename, join } from "node:path";
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { type Args, parseArgs } from "./args.js";
+import { disambiguateNames } from "./names.js";
 import { NoSavedArtifactError, type UploadPlan, planUpload } from "./plan.js";
 import { defaultStatePath, getEntry, removeEntry, setEntry } from "./state.js";
 
@@ -80,6 +81,31 @@ function validateFileSize(size: number, label: string): void {
             `"${label}" is ${formatBytes(size)}, exceeding the 10 MB maximum file size`,
         );
     }
+}
+
+/** Validates and prepares a set of loose files (not a directory) for a single bundled upload. */
+function buildMultiFileEntries(targetPaths: string[]): DirectoryEntry[] {
+  const sizes = targetPaths.map((path) => {
+    const stats = statSync(path, { throwIfNoEntry: false });
+    if (!stats) {
+      console.error(`No such file: ${path}`);
+      process.exit(1);
+    }
+    if (stats.isDirectory()) {
+      console.error(
+        `"${path}" is a directory. Pass a single directory path, or a list of individual files.`,
+      );
+      process.exit(1);
+    }
+    return stats.size;
+  });
+
+  const relativePaths = disambiguateNames(targetPaths);
+  return targetPaths.map((absolutePath, i) => ({
+    relativePath: relativePaths[i],
+    absolutePath,
+    size: sizes[i],
+  }));
 }
 
 function validateDirectorySizes(entries: DirectoryEntry[]): number {
@@ -170,26 +196,36 @@ async function performUpload(
     args: Args,
     artifactId: string | undefined,
 ): Promise<UploadResult> {
-    const stats = statSync(args.targetPath, { throwIfNoEntry: false });
+    if (args.targetPaths.length > 1) {
+        const entries = buildMultiFileEntries(args.targetPaths);
+        const totalSize = validateDirectorySizes(entries);
+        console.log(
+            `Uploading ${entries.length} files (${formatBytes(totalSize)}) to ${args.server}...`,
+        );
+        return uploadDirectory(args.server, entries, artifactId);
+    }
+
+    const targetPath = args.targetPaths[0];
+    const stats = statSync(targetPath, { throwIfNoEntry: false });
     if (!stats) {
-        console.error(`No such file or directory: ${args.targetPath}`);
+        console.error(`No such file or directory: ${targetPath}`);
         process.exit(1);
     }
 
     if (stats.isDirectory()) {
-        const entries = enumerateDirectory(args.targetPath);
+        const entries = enumerateDirectory(targetPath);
         if (entries.length === 0) {
             console.error("Directory contains no files to upload.");
             process.exit(1);
         }
         const totalSize = validateDirectorySizes(entries);
         console.log(
-            `Uploading ${basename(args.targetPath)}/ (${entries.length} files, ${formatBytes(totalSize)}) to ${args.server}...`,
+            `Uploading ${basename(targetPath)}/ (${entries.length} files, ${formatBytes(totalSize)}) to ${args.server}...`,
         );
         return uploadDirectory(args.server, entries, artifactId);
     }
 
-    const displayName = args.name ?? basename(args.targetPath);
+    const displayName = args.name ?? basename(targetPath);
     const isZip = displayName.toLowerCase().endsWith(".zip");
     const mode: UploadMode = isZip
         ? args.extract
@@ -204,7 +240,7 @@ async function performUpload(
     );
     return uploadSingleFile(
         args.server,
-        args.targetPath,
+        targetPath,
         mode,
         displayName,
         artifactId,
@@ -227,10 +263,13 @@ function resolvePlan(
     }
 }
 
-function saveResult(statePath: string, args: Args, result: UploadResult): void {
-    const folderName = basename(args.targetPath);
+/** Deterministic state-file key for a set of target paths, independent of the order they were given in. */
+function stateKey(targetPaths: string[]): string {
+    return [...targetPaths].sort().join("\n");
+}
 
-    setEntry(statePath, args.server, folderName, {
+function saveResult(statePath: string, args: Args, result: UploadResult): void {
+    setEntry(statePath, args.server, stateKey(args.targetPaths), {
         id: result.id,
         url: result.url,
         updatedAt: new Date().toISOString(),
@@ -240,7 +279,7 @@ function saveResult(statePath: string, args: Args, result: UploadResult): void {
 async function main(): Promise<void> {
     const args = parseArgs(process.argv.slice(2));
     const statePath = defaultStatePath();
-    const existing = getEntry(statePath, args.server, args.targetPath);
+    const existing = getEntry(statePath, args.server, stateKey(args.targetPaths));
     const plan = resolvePlan(args, existing);
 
     const attemptId = plan.action === "update" ? plan.id : undefined;
@@ -267,14 +306,14 @@ async function main(): Promise<void> {
         }
 
         if (existing?.id === plan.id) {
-            removeEntry(statePath, args.server, args.targetPath);
+            removeEntry(statePath, args.server, stateKey(args.targetPaths));
         }
         if (args.command === "update") {
             console.error(
                 `Artifact ${plan.id} no longer exists on ${args.server}.`,
             );
             console.error(
-                `Run "drop-share upload ${args.targetPath}" to publish a new one.`,
+                `Run "drop-share upload ${args.targetPaths.join(" ")}" to publish a new one.`,
             );
             process.exit(1);
         }

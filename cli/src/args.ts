@@ -4,7 +4,7 @@ export const DEFAULT_SERVER = "https://artifacts.msar.dev";
 
 export interface Args {
   command: "upload" | "update";
-  targetPath: string;
+  targetPaths: string[];
   server: string;
   extract: boolean;
   name?: string;
@@ -13,17 +13,18 @@ export interface Args {
 }
 
 function printUsageAndExit(): never {
-  console.error("Usage: drop-share upload <path> [--server <url>] [--extract] [--name <name>] [--new]");
-  console.error("       drop-share update <path> [--server <url>] [--extract] [--id <id>]");
+  console.error("Usage: drop-share upload <path> [<path> ...] [--server <url>] [--extract] [--name <name>] [--new]");
+  console.error("       drop-share update <path> [<path> ...] [--server <url>] [--extract] [--id <id>]");
   console.error("");
+  console.error("Passing multiple paths bundles them into a single artifact (each must be a file, not a directory).");
   console.error(`Environment: ARTIFACT_SERVER can be set instead of passing --server.`);
   console.error(`Defaults to ${DEFAULT_SERVER} if neither is given.`);
   process.exit(1);
 }
 
 export function parseArgs(argv: string[]): Args {
-  const [command, rawTargetPath, ...rest] = argv;
-  if ((command !== "upload" && command !== "update") || !rawTargetPath) {
+  const [command, ...rest] = argv;
+  if (command !== "upload" && command !== "update") {
     printUsageAndExit();
   }
 
@@ -32,6 +33,7 @@ export function parseArgs(argv: string[]): Args {
   let name: string | undefined;
   let forceNew = false;
   let id: string | undefined;
+  const targetPaths: string[] = [];
 
   for (let i = 0; i < rest.length; i++) {
     const arg = rest[i];
@@ -45,15 +47,25 @@ export function parseArgs(argv: string[]): Args {
       forceNew = true;
     } else if (arg === "--id" && command === "update") {
       id = rest[++i];
-    } else {
+    } else if (arg.startsWith("--")) {
       console.error(`Unknown option: ${arg}`);
       printUsageAndExit();
+    } else {
+      targetPaths.push(resolve(arg));
     }
+  }
+
+  if (targetPaths.length === 0) {
+    printUsageAndExit();
+  }
+  if (name !== undefined && targetPaths.length > 1) {
+    console.error("--name can't be used with multiple paths.");
+    printUsageAndExit();
   }
 
   return {
     command,
-    targetPath: resolve(rawTargetPath),
+    targetPaths,
     server: server.replace(/\/+$/, ""),
     extract,
     name,

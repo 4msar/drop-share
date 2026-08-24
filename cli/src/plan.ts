@@ -9,8 +9,9 @@ export function planUpload(args: Args, existing: StateEntry | undefined): Upload
   if (args.command === "update") {
     const id = args.id ?? existing?.id;
     if (!id) {
+      const pathList = args.targetPaths.join(" ");
       throw new NoSavedArtifactError(
-        `No saved artifact found for ${args.targetPath} on ${args.server}. Run "drop-share upload ${args.targetPath}" first.`,
+        `No saved artifact found for ${pathList} on ${args.server}. Run "drop-share upload ${pathList}" first.`,
       );
     }
     return { action: "update", id };

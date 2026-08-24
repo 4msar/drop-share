@@ -5,7 +5,7 @@ import { NoSavedArtifactError, planUpload } from "./plan.js";
 function makeArgs(overrides: Partial<Args> = {}): Args {
   return {
     command: "upload",
-    targetPath: "/abs/photo.png",
+    targetPaths: ["/abs/photo.png"],
     server: "https://example.com",
     extract: false,
     forceNew: false,

@@ -267,7 +267,14 @@ dependencies (Node built-ins only: `fs`, `path`, global `fetch`/`FormData`).
 npx drop-and-share upload ./photo.png --server https://your-domain
 npx drop-and-share upload ./release.zip --extract --server https://your-domain
 npx drop-and-share upload ./my-project/ --server https://your-domain
+npx drop-and-share upload ./a.png ./b.png ./notes.md --server https://your-domain
 ```
+
+Passing several paths bundles them into a single artifact (each path must be
+a file, not a directory). Since paths are plain positional arguments, your
+shell's normal filename tab-completion works for each one. If two files
+share a basename, their parent directory name is prefixed to keep them
+distinct (e.g. `a-logo.png`, `b-logo.png`).
 
 **Or install it once** for a persistent `drop-share` binary on your PATH:
 
