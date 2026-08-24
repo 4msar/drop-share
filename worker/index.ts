@@ -16,7 +16,9 @@ app.all("/api/health", methodNotAllowed);
 app.post("/api/upload", (c) => handleUpload(c.req.raw, c.env));
 app.all("/api/upload", methodNotAllowed);
 
-app.get("/api/artifact/:id", (c) => handleArtifactJson(c.req.param("id"), c.env));
+app.get("/api/artifact/:id", (c) =>
+  handleArtifactJson(c.req.param("id"), c.env, c.req.query("path")),
+);
 app.delete("/api/artifact/:id", (c) => handleArtifactDelete(c.req.param("id"), c.env));
 app.all("/api/artifact/:id", methodNotAllowed);
 

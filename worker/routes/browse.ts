@@ -40,23 +40,55 @@ export async function handleArtifactBrowse(
     return serveFile(id, relSubPath, env, request);
 }
 
+/**
+ * Normalises a caller-supplied subdirectory path into an R2 prefix segment:
+ * "" for the artifact root, otherwise a validated, slash-terminated path.
+ * Returns null for anything that escapes the artifact (traversal, absolute
+ * paths), which callers turn into a 404.
+ */
+function normalizeListingPath(rawPath: string | undefined): string | null {
+    if (rawPath === undefined || rawPath === "" || rawPath === "/") return "";
+    const trimmed = rawPath.replace(/^\/+/, "").replace(/\/+$/, "");
+    if (trimmed === "") return "";
+    const normalized = normalizeRelativePath(trimmed);
+    if (normalized === null) return null;
+    return `${normalized}/`;
+}
+
 export async function handleArtifactJson(
     id: string,
     env: Env,
+    rawPath?: string,
 ): Promise<Response> {
     if (!isValidArtifactId(id)) return jsonError(404, "Artifact not found");
-    const listing = await listArtifactChildren(env.ARTIFACTS_BUCKET, `${id}/`);
+
+    const subPath = normalizeListingPath(rawPath);
+    if (subPath === null) return jsonError(404, "Artifact not found");
+
+    const listing = await listArtifactChildren(
+        env.ARTIFACTS_BUCKET,
+        `${id}/${subPath}`,
+    );
     if (listing.files.length === 0 && listing.directories.length === 0) {
         return jsonError(404, "Artifact not found");
     }
     return jsonOk({
         id,
-        url: `/a/${id}/`,
-        files: listing.files.map((file) => ({
-            name: file.name,
-            size: file.size,
-            contentType: file.contentType,
-        })),
+        url: `/a/${id}/${subPath}`,
+        path: subPath,
+        files: listing.files.map((file) => {
+            const contentType = file.contentType ?? getContentType(file.name);
+            return {
+                name: file.name,
+                size: file.size,
+                contentType: file.contentType,
+                // The client renders the viewer now, but the decision about
+                // what is safe to show inline stays here - duplicating that
+                // predicate in the browser would let the two drift apart.
+                previewable: isInlineSafe(contentType),
+                markdown: contentType === MARKDOWN_CONTENT_TYPE,
+            };
+        }),
         directories: listing.directories,
     });
 }
