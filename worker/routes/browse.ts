@@ -1,3 +1,4 @@
+import { marked } from "marked";
 import {
     getContentType,
     isInlineSafe,
@@ -14,6 +15,9 @@ import {
 } from "../lib/r2.js";
 
 const IMMUTABLE_CACHE_CONTROL = "public, max-age=31536000, immutable";
+const MARKDOWN_CONTENT_TYPE = "text/markdown; charset=utf-8";
+const SANDBOX_CSP =
+    "sandbox allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox allow-modals";
 
 export async function handleArtifactBrowse(
     id: string,
@@ -116,6 +120,14 @@ async function serveFile(
     const contentType =
         object.httpMetadata?.contentType ?? getContentType(normalizedPath);
     const filename = normalizedPath.split("/").pop() ?? normalizedPath;
+
+    if (
+        contentType === MARKDOWN_CONTENT_TYPE &&
+        new URL(request.url).searchParams.get("render") === "html"
+    ) {
+        return renderMarkdownFile(filename, await object.text(), request.method);
+    }
+
     const dispositionType = isInlineSafe(contentType) ? "inline" : "attachment";
 
     const headers = new Headers({
@@ -135,10 +147,7 @@ async function serveFile(
         // embedded script only ever runs inside a sandboxed, opaque origin - no
         // access to this site's origin, same as if it were on a totally
         // different domain. Omitting allow-same-origin is what makes that hold.
-        headers.set(
-            "Content-Security-Policy",
-            "sandbox allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox allow-modals",
-        );
+        headers.set("Content-Security-Policy", SANDBOX_CSP);
     }
 
     if (request.method === "HEAD") {
@@ -165,6 +174,61 @@ function htmlResponse(html: string, method: string): Response {
     });
     if (method === "HEAD") return new Response(null, { status: 200, headers });
     return new Response(html, { status: 200, headers });
+}
+
+/** Renders a markdown file's contents as a standalone HTML page for the preview iframe. */
+function renderMarkdownFile(
+    filename: string,
+    markdownSource: string,
+    method: string,
+): Response {
+    const bodyHtml = marked.parse(markdownSource, { async: false }) as string;
+    const page = renderMarkdownPreviewPage(filename, bodyHtml);
+    const headers = new Headers({
+        "Content-Type": "text/html; charset=utf-8",
+        // The R2 object behind this render is immutable, and markdown can embed
+        // raw HTML/<script>, so this gets the same sandbox CSP as uploaded
+        // HTML/SVG - the browser has already committed to running it as HTML.
+        "Cache-Control": IMMUTABLE_CACHE_CONTROL,
+        "Content-Security-Policy": SANDBOX_CSP,
+    });
+    if (method === "HEAD") return new Response(null, { status: 200, headers });
+    return new Response(page, { status: 200, headers });
+}
+
+function renderMarkdownPreviewPage(filename: string, bodyHtml: string): string {
+    return `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>${escapeHtml(filename)}</title>
+<style>
+  :root {
+    --bg: #fff; --text: #374151; --text-h: #111827; --border: #e5e7eb; --code-bg: #f3f4f6;
+    color-scheme: light dark;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #16171d; --text: #cbd5e1; --text-h: #f3f4f6; --border: #30323c; --code-bg: #1f2028; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 32px; font: 16px/1.6 system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text); }
+  main { max-width: 720px; margin: 0 auto; }
+  h1, h2, h3, h4, h5, h6 { color: var(--text-h); }
+  a { color: inherit; }
+  pre { background: var(--code-bg); padding: 12px; border-radius: 6px; overflow-x: auto; }
+  code { background: var(--code-bg); padding: 0.15em 0.35em; border-radius: 4px; font-size: 0.9em; }
+  pre code { background: none; padding: 0; }
+  blockquote { margin: 0; padding-left: 16px; border-left: 3px solid var(--border); }
+  img { max-width: 100%; }
+  table { border-collapse: collapse; width: 100%; }
+  th, td { border: 1px solid var(--border); padding: 6px 10px; text-align: left; }
+</style>
+</head>
+<body>
+<main>${bodyHtml}</main>
+</body>
+</html>`;
 }
 
 function formatSize(bytes: number): string {
@@ -272,6 +336,7 @@ function pageShell(title: string, body: string): string {
   .preview-placeholder { margin: auto; color: var(--muted); text-align: center; padding: 24px; max-width: 320px; }
   .btn { display: inline-block; padding: 8px 16px; border-radius: 6px; border: 1px solid var(--border); text-decoration: none; cursor: pointer; background: none; font-size: 13px; font-family: inherit; white-space: nowrap; color: var(--text-h); }
   .btn.danger { border-color: #ef4444; color: #ef4444; }
+  .preview-toggle { position: absolute; top: 12px; right: 12px; background: var(--bg); }
   @media (max-width: 720px) {
     .viewer { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
     .file-list { border-right: none; border-bottom: 1px solid var(--border); max-height: 25vh; overflow: auto; }
@@ -303,8 +368,15 @@ function pickDefaultPreview(
     );
 }
 
+/** Whether a listed file is markdown, i.e. eligible for HTML rendering with a source toggle. */
+function isMarkdownFile(file: ArtifactChild): boolean {
+    return (file.contentType ?? getContentType(file.name)) === MARKDOWN_CONTENT_TYPE;
+}
+
 const PREVIEW_SCRIPT = `
 <script>
+  const previewToggle = document.getElementById('preview-source-toggle');
+
   document.querySelectorAll('[data-preview]').forEach((link) => {
     link.addEventListener('click', (event) => {
       event.preventDefault();
@@ -313,11 +385,33 @@ const PREVIEW_SCRIPT = `
       if (item) item.classList.add('active');
       const frame = document.getElementById('preview-frame');
       const placeholder = document.getElementById('preview-placeholder');
-      frame.src = link.getAttribute('data-preview');
+      const renderedSrc = link.getAttribute('data-preview');
+      frame.src = renderedSrc;
       frame.hidden = false;
       if (placeholder) placeholder.hidden = true;
+
+      const sourceSrc = link.getAttribute('data-markdown-source');
+      if (previewToggle) {
+        previewToggle.hidden = !sourceSrc;
+        if (sourceSrc) {
+          previewToggle.dataset.renderedSrc = renderedSrc;
+          previewToggle.dataset.sourceSrc = sourceSrc;
+          previewToggle.dataset.showingSource = 'false';
+          previewToggle.textContent = 'Show source';
+        }
+      }
     });
   });
+
+  if (previewToggle) {
+    previewToggle.addEventListener('click', () => {
+      const frame = document.getElementById('preview-frame');
+      const showingSource = previewToggle.dataset.showingSource === 'true';
+      frame.src = showingSource ? previewToggle.dataset.renderedSrc : previewToggle.dataset.sourceSrc;
+      previewToggle.dataset.showingSource = showingSource ? 'false' : 'true';
+      previewToggle.textContent = showingSource ? 'Show source' : 'Show rendered';
+    });
+  }
 </script>`;
 
 function renderArtifactViewerPage(
@@ -357,11 +451,15 @@ function renderArtifactViewerPage(
         .map((file) => {
             const contentType = file.contentType ?? getContentType(file.name);
             const previewable = isInlineSafe(contentType);
+            const isMarkdown = contentType === MARKDOWN_CONTENT_TYPE;
             const href = currentPath + file.name;
             const isActive =
                 defaultPreview !== null && file.name === defaultPreview.name;
             const previewAttr = previewable
-                ? ` data-preview="${escapeHtml(href)}"`
+                ? ` data-preview="${escapeHtml(isMarkdown ? `${href}?render=html` : href)}"`
+                : "";
+            const markdownSourceAttr = previewable && isMarkdown
+                ? ` data-markdown-source="${escapeHtml(href)}"`
                 : "";
             const classes = [
                 "file-item",
@@ -370,7 +468,7 @@ function renderArtifactViewerPage(
             ]
                 .filter(Boolean)
                 .join(" ");
-            return `<li class="${classes}"><span class="icon">${fileIcon(file.name)}</span><a href="${escapeHtml(href)}"${previewAttr}>${escapeHtml(file.name)}</a><span class="size">${formatSize(file.size)}</span>${openInTabLink(href, file.name)}</li>`;
+            return `<li class="${classes}"><span class="icon">${fileIcon(file.name)}</span><a href="${escapeHtml(href)}"${previewAttr}${markdownSourceAttr}>${escapeHtml(file.name)}</a><span class="size">${formatSize(file.size)}</span>${openInTabLink(href, file.name)}</li>`;
         })
         .join("");
 
@@ -381,7 +479,11 @@ function renderArtifactViewerPage(
         ? `, ${folderCount} folder${folderCount === 1 ? "" : "s"}`
         : "";
 
-    const previewSrc = defaultPreview ? currentPath + defaultPreview.name : "";
+    const defaultSourceSrc = defaultPreview ? currentPath + defaultPreview.name : "";
+    const defaultIsMarkdown = defaultPreview !== null && isMarkdownFile(defaultPreview);
+    const previewSrc = defaultIsMarkdown
+        ? `${defaultSourceSrc}?render=html`
+        : defaultSourceSrc;
     const placeholderText =
         listing.files.length === 0
             ? "This folder only contains subfolders — open one from the list."
@@ -407,6 +509,7 @@ function renderArtifactViewerPage(
     <div id="preview-placeholder" class="preview-placeholder"${defaultPreview ? " hidden" : ""}>
       <p>${escapeHtml(placeholderText)}</p>
     </div>
+    <button id="preview-source-toggle" class="btn preview-toggle" type="button" data-rendered-src="${escapeHtml(previewSrc)}" data-source-src="${escapeHtml(defaultSourceSrc)}" data-showing-source="false"${defaultIsMarkdown ? "" : " hidden"}>Show source</button>
   </section>
 </div>
 ${PREVIEW_SCRIPT}

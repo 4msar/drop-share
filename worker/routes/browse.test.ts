@@ -76,6 +76,24 @@ describe("GET /a/:id/* : two-pane viewer", () => {
 
     expect(html).toContain("open one from the list");
   });
+
+  it("renders a markdown file to HTML by default, with a source toggle wired up", async () => {
+    const { url } = await upload("file", [{ name: "notes.md", content: "# Hello" }]);
+    const html = await (await exports.default.fetch(`https://artifacts.example.com${url}`)).text();
+
+    expect(html).toContain(`data-preview="${url}notes.md?render=html"`);
+    expect(html).toContain(`data-markdown-source="${url}notes.md"`);
+    expect(html).toContain(`src="${url}notes.md?render=html"`);
+    expect(html).not.toMatch(/id="preview-source-toggle"[^>]*\bhidden\b/);
+  });
+
+  it("does not add a source toggle for non-markdown previewable files", async () => {
+    const { url } = await upload("file", [{ name: "notes.txt", content: "hello" }]);
+    const html = await (await exports.default.fetch(`https://artifacts.example.com${url}`)).text();
+
+    expect(html).not.toMatch(/<a[^>]*data-markdown-source=/);
+    expect(html).toMatch(/id="preview-source-toggle"[^>]*\bhidden\b/);
+  });
 });
 
 describe("GET /a/:id/* : serving and browsing", () => {
@@ -165,6 +183,28 @@ describe("GET /a/:id/* : serving and browsing", () => {
     const { url } = await upload("file", [{ name: "notes.txt", content: "hello" }]);
     const response = await exports.default.fetch(`https://artifacts.example.com${url}notes.txt`);
     expect(response.headers.get("content-disposition")).toContain("inline");
+  });
+
+  it("renders markdown to sandboxed HTML when requested with ?render=html", async () => {
+    const { url } = await upload("file", [{ name: "notes.md", content: "# Hello\n\nSome *text*." }]);
+    const response = await exports.default.fetch(`https://artifacts.example.com${url}notes.md?render=html`);
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toContain("text/html");
+    const csp = response.headers.get("content-security-policy") ?? "";
+    expect(csp).toContain("sandbox");
+    expect(csp).not.toContain("allow-same-origin");
+    const html = await response.text();
+    expect(html).toContain("<h1>Hello</h1>");
+    expect(html).toContain("<em>text</em>");
+  });
+
+  it("still serves the raw markdown source when the render query param is absent", async () => {
+    const { url } = await upload("file", [{ name: "notes.md", content: "# Hello" }]);
+    const response = await exports.default.fetch(`https://artifacts.example.com${url}notes.md`);
+
+    expect(response.headers.get("content-type")).toContain("text/markdown");
+    expect(await response.text()).toBe("# Hello");
   });
 
   it("redirects to add a trailing slash when a directory is requested without one", async () => {
