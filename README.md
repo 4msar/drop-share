@@ -1,12 +1,13 @@
-# drop-share
+# Drop Share — Share your artifacts
+
+[![Health Status](https://img.shields.io/website?down_color=lightgrey&down_message=down&label=Health&logo=react&logoColor=brand&up_color=green&up_message=up&url=https%3A%2F%2Fartifacts.msar.dev)](https://artifacts.msar.dev)
+[![Cloudflare Deploy Check](https://img.shields.io/github/check-runs/4msar/drop-share/main?checkName=Cloudflare%20Workers&label=Deployment&logo=cloudflare&logoColor=brand&up_color=orange)](https://github.com/4msar/drop-share/commits/main)
 
 A personal artifact-sharing service on Cloudflare Workers + R2. Drop a file, a
 ZIP, or a folder in the browser (or via the `drop-share` CLI) and get back an
 immutable public URL.
 
 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/4msar/drop-share)
-[![Health Status](https://img.shields.io/website?down_color=lightgrey&down_message=down&label=Health&logo=cloudflare&logoColor=white&up_color=orange&up_message=up&url=https%3A%2F%2Fartifacts.msar.dev)](https://artifacts.msar.dev)
-[![Cloudflare Deploy Check](https://img.shields.io/github/check-runs/4msar/drop-share/main?checkName=Cloudflare%20Workers&label=Deployment&logo=cloudflare&logoColor=white&up_color=orange)](https://github.com/4msar/drop-share/commits/main)
 
 That button walks you through connecting your own Cloudflare account and
 deploying this Worker from this repo. It still won't set your real domain
