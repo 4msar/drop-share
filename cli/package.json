@@ -4,7 +4,7 @@
   "description": "CLI for uploading files, ZIPs, and folders to a drop-share instance",
   "type": "module",
   "bin": {
-    "drop-share": "./dist/index.js"
+    "drop-share": "dist/index.js"
   },
   "files": [
     "dist"
