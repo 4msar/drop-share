@@ -1,3 +1,5 @@
+<center><img src="./public/favicon.png" alt="Drop Share" width="128" /></center>
+
 # Drop Share — Share your artifacts
 
 [![Health Status](https://img.shields.io/website?down_color=lightgrey&down_message=down&label=Health&logo=react&logoColor=brand&up_color=green&up_message=up&url=https%3A%2F%2Fartifacts.msar.dev)](https://artifacts.msar.dev)
@@ -14,6 +16,8 @@ That button walks you through connecting your own Cloudflare account and
 deploying this Worker from this repo. It still won't set your real domain
 for you — see [Deploying](#deploying) for the couple of steps to finish
 after it completes.
+
+![Screenshot of the upload page](./public/og-image.png)
 
 ## How it works
 
