@@ -16,36 +16,36 @@
  */
 :root {
   --surface: #ffffff;
-  --panel: #f4f3ec;
+  --panel: #f3f7fc;
   --body: #6b6375;
   --heading: #08060d;
   --edge: #e5e4e7;
-  --brand: #aa3bff;
-  --brand-soft: rgb(170 59 255 / 0.1);
-  --brand-edge: rgb(170 59 255 / 0.5);
+  --brand: #235791;
+  --brand-soft: rgb(35 87 145 / 0.1);
+  --brand-edge: rgb(35 87 145 / 0.5);
 }
 
 :root.dark {
   --surface: #16171d;
-  --panel: #1f2028;
-  --body: #9ca3af;
+  --panel: #121218;
+  --body: #f3f7fc;
   --heading: #f3f4f6;
-  --edge: #2e303a;
-  --brand: #c084fc;
-  --brand-soft: rgb(192 132 252 / 0.15);
-  --brand-edge: rgb(192 132 252 / 0.5);
+  --edge: #1e3b5c;
+  --brand: #4285f4;
+  --brand-soft: rgb(91 154 213 / 0.15);
+  --brand-edge: rgb(91 154 213 / 0.5);
 }
 
 @media (prefers-color-scheme: dark) {
   :root:not(.light) {
     --surface: #16171d;
-    --panel: #1f2028;
-    --body: #9ca3af;
+    --panel: #121218;
+    --body: #f3f7fc;
     --heading: #f3f4f6;
-    --edge: #2e303a;
-    --brand: #c084fc;
-    --brand-soft: rgb(192 132 252 / 0.15);
-    --brand-edge: rgb(192 132 252 / 0.5);
+    --edge: #1e3b5c;
+    --brand: #4285f4;
+    --brand-soft: rgb(91 154 213 / 0.15);
+    --brand-edge: rgb(91 154 213 / 0.5);
   }
 }
 
