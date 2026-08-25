@@ -118,7 +118,7 @@ export function PreviewPane({
                     // rather than leaving the previous document up.
                     key={src}
                     src={src}
-                    className="flex-1 scrollbar-none pl-3 border-none bg-surface"
+                    className="flex-1 scrollbar-none md:pl-3 border-none bg-surface"
                 />
             )}
 
