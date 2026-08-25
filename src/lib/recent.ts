@@ -41,6 +41,11 @@ export function addRecentItem(
     return persist(items);
 }
 
+/** Removes an artifact from recently viewed items. */
+export function removeRecentItem(id: string): RecentItem[] {
+    return persist(getRecentItems().filter((item) => item.id !== id));
+}
+
 function persist(items: RecentItem[]): RecentItem[] {
     let list = items;
     while (list.length > 0) {

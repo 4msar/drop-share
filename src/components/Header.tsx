@@ -3,6 +3,7 @@ import { Link, useNavigate } from "react-router";
 import { Button } from "./Button";
 import { RecentSwitcher } from "./RecentSwitcher";
 import { deleteArtifact, uploadIntoArtifact } from "../lib/artifact";
+import { removeRecentItem } from "../lib/recent";
 import type { RecentItem } from "../lib/recent";
 import { toggleTheme } from "../lib/theme";
 import {
@@ -70,6 +71,7 @@ export function Header({
             return;
         try {
             await deleteArtifact(currentId);
+            removeRecentItem(currentId);
             onDeleted();
             window.setTimeout(
                 () => void navigate("/"),
