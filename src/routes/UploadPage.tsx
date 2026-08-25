@@ -3,7 +3,6 @@ import { useNavigate } from "react-router";
 import { Button } from "../components/Button";
 import { ProgressBar } from "../components/ProgressBar";
 import { RecentDrawer } from "../components/RecentDrawer";
-import { UploadIcon } from "../components/UploadIcon";
 import { formatBytes } from "../lib/format";
 import {
     type Selection,
@@ -16,6 +15,7 @@ import {
     validateSelection,
 } from "../lib/upload";
 import { Footer } from "../components/Footer";
+import { UploadIcon } from "../components/Icons";
 
 type Status =
     | "idle"
@@ -149,7 +149,7 @@ export default function UploadPage() {
                             }
                         }}
                     >
-                        <UploadIcon />
+                        <UploadIcon className="mb-2 text-brand size-18" />
                         <h1 className="text-2xl leading-tight font-medium tracking-tight text-heading sm:text-[32px]">
                             Drop files, ZIPs, or folders here
                         </h1>

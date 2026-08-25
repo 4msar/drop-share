@@ -34,6 +34,7 @@ export default function ViewerPage() {
     const [deleted, setDeleted] = useState(false);
     const [actionError, setActionError] = useState<string | null>(null);
     const [reloadToken, setReloadToken] = useState(0);
+    const [fileListOpen, setFileListOpen] = useState(true);
     const [recentItems, setRecentItems] = useState<RecentItem[]>(() =>
         getRecentItems(),
     );
@@ -173,7 +174,13 @@ export default function ViewerPage() {
                 </p>
             )}
 
-            <div className="grid min-h-0 flex-1 md:grid-cols-[280px_1fr] max-md:grid-rows-[auto_1fr]">
+            <div
+                className={`grid min-h-0 flex-1 max-md:grid-rows-[auto_1fr] ${
+                    fileListOpen
+                        ? "md:grid-cols-[280px_1fr]"
+                        : "md:grid-cols-[0_1fr]"
+                }`}
+            >
                 <FileList
                     id={id}
                     subPath={subPath}
@@ -183,6 +190,8 @@ export default function ViewerPage() {
                     onPreview={(file) =>
                         setSelected({ file, showSource: false })
                     }
+                    open={fileListOpen}
+                    onToggle={() => setFileListOpen((open) => !open)}
                 />
                 <PreviewPane
                     src={previewSrc}

@@ -5,6 +5,7 @@ import { RecentSwitcher } from "./RecentSwitcher";
 import { deleteArtifact, uploadIntoArtifact } from "../lib/artifact";
 import type { RecentItem } from "../lib/recent";
 import { toggleTheme } from "../lib/theme";
+import { ActionIcon, ThemeIcon } from "./Icons";
 
 const DELETED_REDIRECT_DELAY_MS = 3000;
 const COPY_FEEDBACK_MS = 1500;
@@ -128,7 +129,7 @@ export function Header({
                         onUploadFiles(Array.from(event.target.files ?? []));
                     }}
                 />
-                <button
+                <Button
                     type="button"
                     aria-label="Toggle theme"
                     title="Toggle theme"
@@ -142,48 +143,17 @@ export function Header({
                         );
                         document.documentElement.style.colorScheme = next;
                     }}
-                    className="grid size-7 place-items-center rounded-md bg-panel text-base text-heading hover:bg-brand-soft"
+                    className="size-7 text-base text-heading p-0"
                 >
-                    <svg
-                        className="size-3 inline-block"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        stroke-width="2"
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                    >
-                        <path d="M12 22a1 1 0 0 1 0-20 10 9 0 0 1 10 9 5 5 0 0 1-5 5h-2.25a1.75 1.75 0 0 0-1.4 2.8l.3.4a1.75 1.75 0 0 1-1.4 2.8z" />
-                        <circle cx="13.5" cy="6.5" r=".5" fill="currentColor" />
-                        <circle
-                            cx="17.5"
-                            cy="10.5"
-                            r=".5"
-                            fill="currentColor"
-                        />
-                        <circle cx="6.5" cy="12.5" r=".5" fill="currentColor" />
-                        <circle cx="8.5" cy="7.5" r=".5" fill="currentColor" />
-                    </svg>
-                </button>
+                    <ThemeIcon className="size-3" />
+                </Button>
                 <div className="relative">
                     <Button
                         aria-expanded={actionsOpen}
                         onClick={() => setActionsOpen((open) => !open)}
-                        className="h-7 text-xs px-1.5 py-0.5"
+                        className="size-7 text-base p-0"
                     >
-                        <svg
-                            className="size-4 shrink-0"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            stroke-width="2"
-                            stroke-linecap="round"
-                            stroke-linejoin="round"
-                        >
-                            <path d="M4 5h16" />
-                            <path d="M4 12h16" />
-                            <path d="M4 19h16" />
-                        </svg>
+                        <ActionIcon className="size-3" />
                     </Button>
                     {actionsOpen && (
                         <>
