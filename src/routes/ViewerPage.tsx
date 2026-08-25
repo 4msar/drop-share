@@ -41,7 +41,9 @@ export default function ViewerPage() {
     const [uploading, setUploading] = useState(false);
     const [actionError, setActionError] = useState<string | null>(null);
     const [reloadToken, setReloadToken] = useState(0);
-    const [recentItems, setRecentItems] = useState<RecentItem[]>(() => getRecentItems());
+    const [recentItems, setRecentItems] = useState<RecentItem[]>(() =>
+        getRecentItems(),
+    );
     const uploadInputRef = useRef<HTMLInputElement>(null);
 
     useEffect(() => {
@@ -227,8 +229,11 @@ export default function ViewerPage() {
                         <img src="/logo.svg" alt="" className="size-8" />
                     </Link>
                     <h1 className="mb-0.5 break-all text-lg font-medium text-heading flex items-center gap-2">
-                        {title}
-                        <RecentSwitcher currentId={id} items={recentItems} />
+                        <RecentSwitcher
+                            title={title ?? id}
+                            currentId={id}
+                            items={recentItems}
+                        />
                     </h1>
                     <p className="text-[13px] text-body">{meta}</p>
                 </div>

@@ -8,9 +8,14 @@ interface RecentListProps {
     onSelect?: (id: string) => void;
 }
 
-export function RecentList({ items, currentId, onSelect }: RecentListProps) {
+export function RecentList({
+    items,
+    currentId,
+    onSelect,
+    className = "",
+}: RecentListProps & { className?: string }) {
     return (
-        <ul className="flex flex-col gap-1 px-4">
+        <ul className={`flex flex-col px-1 gap-1 ${className}`}>
             {items.map((item) => {
                 const isCurrent = item.id === currentId;
                 const label = (

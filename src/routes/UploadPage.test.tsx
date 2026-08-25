@@ -166,9 +166,24 @@ describe("recent artifacts", () => {
     addRecentItem("abc123", Date.now());
     renderPage();
 
-    fireEvent.click(screen.getByRole("button", { name: /recent artifacts/i }));
+    fireEvent.click(screen.getByRole("button", { name: /^recent artifacts$/i }));
 
     const link = screen.getByRole("link", { name: /abc123/i });
     expect(link.getAttribute("href")).toBe("/a/abc123/");
+  });
+
+  it("closes the drawer when clicking the backdrop behind it", () => {
+    addRecentItem("abc123", Date.now());
+    renderPage();
+
+    fireEvent.click(screen.getByRole("button", { name: /^recent artifacts$/i }));
+    expect(screen.getByRole("button", { name: /close recent artifacts/i })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: /close recent artifacts/i }));
+
+    expect(screen.queryByRole("button", { name: /close recent artifacts/i })).toBeNull();
+    expect(
+      screen.getByRole("button", { name: /^recent artifacts$/i }).getAttribute("aria-expanded"),
+    ).toBe("false");
   });
 });
