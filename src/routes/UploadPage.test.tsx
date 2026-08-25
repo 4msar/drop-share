@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { addRecentItem } from "../lib/recent";
 import type { SelectedFile, UploadMode } from "../lib/upload";
 import UploadPage from "./UploadPage";
 
@@ -14,6 +15,7 @@ vi.mock("../lib/upload", async (importOriginal) => ({
 afterEach(() => {
   vi.clearAllMocks();
   vi.unstubAllGlobals();
+  localStorage.clear();
 });
 
 /** A File whose reported size can exceed what we actually allocate. */
@@ -151,5 +153,22 @@ describe("uploading", () => {
     reportProgress!(0.42);
 
     await waitFor(() => expect(screen.getByText(/uploading… 42%/i)).toBeTruthy());
+  });
+});
+
+describe("recent artifacts", () => {
+  it("shows no recent-artifacts toggle when nothing has been viewed yet", () => {
+    renderPage();
+    expect(screen.queryByRole("button", { name: /recent artifacts/i })).toBeNull();
+  });
+
+  it("opens a drawer listing recently viewed artifacts and links to them", () => {
+    addRecentItem("abc123", Date.now());
+    renderPage();
+
+    fireEvent.click(screen.getByRole("button", { name: /recent artifacts/i }));
+
+    const link = screen.getByRole("link", { name: /abc123/i });
+    expect(link.getAttribute("href")).toBe("/a/abc123/");
   });
 });

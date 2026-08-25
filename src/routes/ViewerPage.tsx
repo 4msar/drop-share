@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from "react-router";
 import { Button } from "../components/Button";
 import { FileList } from "../components/FileList";
 import { PreviewPane } from "../components/PreviewPane";
+import { RecentSwitcher } from "../components/RecentSwitcher";
 import {
     type ArtifactFile,
     type ArtifactListing,
@@ -16,6 +17,7 @@ import {
     uploadIntoArtifact,
 } from "../lib/artifact";
 import { pluralize } from "../lib/format";
+import { addRecentItem, type RecentItem, getRecentItems } from "../lib/recent";
 
 const DELETED_REDIRECT_DELAY_MS = 3000;
 const COPY_FEEDBACK_MS = 1500;
@@ -39,6 +41,7 @@ export default function ViewerPage() {
     const [uploading, setUploading] = useState(false);
     const [actionError, setActionError] = useState<string | null>(null);
     const [reloadToken, setReloadToken] = useState(0);
+    const [recentItems, setRecentItems] = useState<RecentItem[]>(() => getRecentItems());
     const uploadInputRef = useRef<HTMLInputElement>(null);
 
     useEffect(() => {
@@ -56,6 +59,7 @@ export default function ViewerPage() {
                 setSelected(
                     preview ? { file: preview, showSource: false } : null,
                 );
+                setRecentItems(addRecentItem(id));
             },
             (error: unknown) => {
                 if (cancelled) return;
@@ -224,6 +228,7 @@ export default function ViewerPage() {
                     </Link>
                     <h1 className="mb-0.5 break-all text-lg font-medium text-heading flex items-center gap-2">
                         {title}
+                        <RecentSwitcher currentId={id} items={recentItems} />
                     </h1>
                     <p className="text-[13px] text-body">{meta}</p>
                 </div>

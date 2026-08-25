@@ -2,6 +2,7 @@ import { render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ArtifactFile } from "../lib/artifact";
+import { addRecentItem, getRecentItems } from "../lib/recent";
 import ViewerPage from "./ViewerPage";
 
 const ID = "01ARZ3NDEKTSV4RRFFQ69G5FAV";
@@ -61,6 +62,7 @@ beforeEach(() => {
 afterEach(() => {
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
+  localStorage.clear();
 });
 
 describe("preview pane defaults", () => {
@@ -260,6 +262,38 @@ describe("artifact actions", () => {
         (call) => call[1]?.method === "DELETE",
       ),
     ).toBe(false);
+  });
+});
+
+describe("recent artifacts", () => {
+  it("records the viewed artifact in the recent list", async () => {
+    stubListing({ files: [file("a.txt")] });
+    await renderViewer();
+
+    await waitFor(() =>
+      expect(getRecentItems().some((item) => item.id === ID)).toBe(true),
+    );
+  });
+
+  it("does not show a switcher when this is the only recent artifact", async () => {
+    stubListing({ files: [file("a.txt")] });
+    await renderViewer();
+
+    await waitFor(() => expect(getRecentItems().length).toBe(1));
+    expect(screen.queryByRole("button", { name: /switch artifact/i })).toBeNull();
+  });
+
+  it("offers a switcher to other recent artifacts and links to the selected one", async () => {
+    addRecentItem("other-artifact", Date.now() - 60_000);
+    stubListing({ files: [file("a.txt")] });
+    await renderViewer();
+
+    await waitFor(() => expect(getRecentItems().length).toBe(2));
+
+    screen.getByRole("button", { name: /switch artifact/i }).click();
+
+    const link = await waitFor(() => screen.getByRole("link", { name: /other-artifact/i }));
+    expect(link.getAttribute("href")).toBe("/a/other-artifact/");
   });
 });
 

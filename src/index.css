@@ -1,5 +1,7 @@
 @import "tailwindcss";
 
+@custom-variant dark (&:where(.dark, .dark *));
+
 /*
  * Semantic tokens are declared twice on purpose: the raw values live on :root
  * (and flip in the dark media query), and @theme aliases them so Tailwind

@@ -25,3 +25,17 @@ export function fileIcon(name: string): string {
 export function pluralize(count: number, noun: string): string {
   return `${count} ${noun}${count === 1 ? "" : "s"}`;
 }
+
+const MINUTE_MS = 60_000;
+const HOUR_MS = 3_600_000;
+const DAY_MS = 86_400_000;
+
+/** A short "time ago" label, falling back to a date past 30 days. */
+export function formatRelativeTime(timestamp: number, now: number = Date.now()): string {
+  const diff = now - timestamp;
+  if (diff < MINUTE_MS) return "just now";
+  if (diff < HOUR_MS) return `${Math.floor(diff / MINUTE_MS)}m ago`;
+  if (diff < DAY_MS) return `${Math.floor(diff / HOUR_MS)}h ago`;
+  if (diff < 30 * DAY_MS) return `${Math.floor(diff / DAY_MS)}d ago`;
+  return new Date(timestamp).toLocaleDateString();
+}
