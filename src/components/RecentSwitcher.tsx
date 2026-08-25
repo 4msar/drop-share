@@ -30,7 +30,7 @@ export function RecentSwitcher({
                         }
                         setOpen((value) => !value);
                     }}
-                    className="p-1 rounded-md text-body hover:bg-brand-soft hover:text-brand truncate block px-2 max-w-[calc(100vw-8rem)]"
+                    className="p-1 rounded-md text-body hover:bg-brand-soft hover:text-brand truncate block px-2 max-w-[calc(100vw-8rem)] border border-brand/5 bg-brand/5"
                 >
                     {title}
                 </button>

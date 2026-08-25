@@ -4,6 +4,13 @@
         <meta charset="UTF-8" />
         <link rel="icon" type="image/svg+xml" href="/favicon.png" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <script>
+            const savedTheme = localStorage.getItem("theme");
+            if (savedTheme === "dark" || savedTheme === "light") {
+                document.documentElement.classList.add(savedTheme);
+                document.documentElement.style.colorScheme = savedTheme;
+            }
+        </script>
         <title>Drop Share</title>
         <meta
             name="description"

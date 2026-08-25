@@ -220,12 +220,9 @@ export default function ViewerPage() {
 
     return (
         <div className="flex h-dvh flex-col">
-            <header className="flex flex-wrap items-start justify-between gap-4 border-b border-edge px-6 py-4">
-                <div className="min-w-0 flex items-center gap-2 flex-wrap">
-                    <Link
-                        to="/"
-                        className="flex-1 sm:flex-auto flex justify-center min-w-8"
-                    >
+            <header className="flex flex-wrap items-start justify-center sm:justify-between gap-4 border-b border-edge px-6 py-4">
+                <div className="min-w-0 flex items-center gap-2">
+                    <Link to="/" className="flex justify-center sm:min-w-8">
                         <img src="/logo.svg" alt="" className="size-8" />
                     </Link>
                     <h1 className="mb-0.5 break-all text-lg font-medium text-heading flex items-center gap-2">
@@ -237,7 +234,7 @@ export default function ViewerPage() {
                     </h1>
                     <p className="text-[13px] text-body">{meta}</p>
                 </div>
-                <div className="flex shrink-0 gap-2">
+                <div className="flex items-center justify-center sm:justify-end gap-2 flex-wrap">
                     <Button
                         disabled={uploading}
                         onClick={() => uploadInputRef.current?.click()}
