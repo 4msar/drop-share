@@ -20,7 +20,7 @@ export function RecentList({
                 const isCurrent = item.id === currentId;
                 const label = (
                     <>
-                        <span className="block truncate font-medium text-heading">
+                        <span className="block truncate text-sm font-medium text-heading">
                             {item.id}
                         </span>
                         <span className="block text-xs text-body">
@@ -41,7 +41,7 @@ export function RecentList({
                             <Link
                                 to={`/a/${item.id}/`}
                                 onClick={() => onSelect?.(item.id)}
-                                className="block rounded-lg px-3 py-2 text-left no-underline hover:bg-brand-soft"
+                                className="block rounded-lg transition-all px-3 py-2 text-left no-underline hover:bg-brand-soft"
                             >
                                 {label}
                             </Link>

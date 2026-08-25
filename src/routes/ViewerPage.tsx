@@ -1,26 +1,21 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router";
+import { useEffect, useState } from "react";
+import { useNavigate, useParams } from "react-router";
 import { Button } from "../components/Button";
 import { FileList } from "../components/FileList";
+import { Header } from "../components/Header";
 import { PreviewPane } from "../components/PreviewPane";
-import { RecentSwitcher } from "../components/RecentSwitcher";
 import {
     type ArtifactFile,
     type ArtifactListing,
     ArtifactNotFoundError,
-    deleteArtifact,
     fetchArtifactListing,
     fileUrl,
     pickDefaultPreview,
     previewUrl,
     sortFiles,
-    uploadIntoArtifact,
 } from "../lib/artifact";
 import { pluralize } from "../lib/format";
 import { addRecentItem, type RecentItem, getRecentItems } from "../lib/recent";
-
-const DELETED_REDIRECT_DELAY_MS = 3000;
-const COPY_FEEDBACK_MS = 1500;
 
 type Selected = { file: ArtifactFile; showSource: boolean } | null;
 
@@ -37,14 +32,11 @@ export default function ViewerPage() {
     const [loadError, setLoadError] = useState<string | null>(null);
     const [selected, setSelected] = useState<Selected>(null);
     const [deleted, setDeleted] = useState(false);
-    const [shareLabel, setShareLabel] = useState("Share");
-    const [uploading, setUploading] = useState(false);
     const [actionError, setActionError] = useState<string | null>(null);
     const [reloadToken, setReloadToken] = useState(0);
     const [recentItems, setRecentItems] = useState<RecentItem[]>(() =>
         getRecentItems(),
     );
-    const uploadInputRef = useRef<HTMLInputElement>(null);
 
     useEffect(() => {
         // `cancelled` matters because navigating between folders quickly can leave
@@ -87,60 +79,6 @@ export default function ViewerPage() {
                 : `${id}/${routePath} · Drop Share`;
     }, [id, routePath]);
 
-    const onShare = useCallback(async () => {
-        try {
-            await navigator.clipboard.writeText(window.location.href);
-            setShareLabel("Copied!");
-        } catch {
-            setShareLabel("Copy failed");
-        }
-        window.setTimeout(() => setShareLabel("Share"), COPY_FEEDBACK_MS);
-    }, []);
-
-    const onDelete = useCallback(async () => {
-        if (
-            !window.confirm(
-                "Delete this artifact permanently? This cannot be undone.",
-            )
-        ) {
-            return;
-        }
-        try {
-            await deleteArtifact(id);
-            setDeleted(true);
-            window.setTimeout(
-                () => void navigate("/"),
-                DELETED_REDIRECT_DELAY_MS,
-            );
-        } catch (error) {
-            setActionError(
-                error instanceof Error
-                    ? error.message
-                    : "Failed to delete artifact.",
-            );
-        }
-    }, [id, navigate]);
-
-    const onUploadFiles = useCallback(
-        async (files: File[]) => {
-            if (files.length === 0) return;
-            setUploading(true);
-            setActionError(null);
-            try {
-                await uploadIntoArtifact(id, routePath, files);
-                setReloadToken((token) => token + 1);
-            } catch (error) {
-                setActionError(
-                    error instanceof Error ? error.message : "Upload failed.",
-                );
-            } finally {
-                setUploading(false);
-                if (uploadInputRef.current) uploadInputRef.current.value = "";
-            }
-        },
-        [id, routePath],
-    );
-
     if (deleted) {
         return (
             <main
@@ -148,12 +86,6 @@ export default function ViewerPage() {
                 className="grid min-h-dvh place-items-center p-6"
             >
                 <section className="w-full max-w-md rounded-3xl border border-edge p-8 text-center shadow-lg">
-                    <div
-                        className="mx-auto mb-4 grid size-13 place-items-center rounded-full bg-green-100 text-2xl text-green-700"
-                        aria-hidden="true"
-                    >
-                        ✓
-                    </div>
                     <h1 className="mb-2 text-2xl font-medium text-heading">
                         Artifact deleted
                     </h1>
@@ -220,50 +152,17 @@ export default function ViewerPage() {
 
     return (
         <div className="flex h-dvh flex-col">
-            <header className="flex flex-wrap items-start justify-center sm:justify-between gap-4 border-b border-edge px-6 py-4">
-                <div className="min-w-0 flex items-center gap-2">
-                    <Link to="/" className="flex justify-center sm:min-w-8">
-                        <img src="/logo.svg" alt="" className="size-8" />
-                    </Link>
-                    <h1 className="mb-0.5 break-all text-lg font-medium text-heading flex items-center gap-2">
-                        <RecentSwitcher
-                            title={title ?? id}
-                            currentId={id}
-                            items={recentItems}
-                        />
-                    </h1>
-                    <p className="text-[13px] text-body">{meta}</p>
-                </div>
-                <div className="flex items-center justify-center sm:justify-end gap-2 flex-wrap">
-                    <Button
-                        disabled={uploading}
-                        onClick={() => uploadInputRef.current?.click()}
-                    >
-                        {uploading ? "Uploading…" : "Upload More"}
-                    </Button>
-                    <input
-                        ref={uploadInputRef}
-                        type="file"
-                        multiple
-                        hidden
-                        aria-label="Add files to this folder"
-                        onChange={(event) =>
-                            void onUploadFiles(
-                                Array.from(event.target.files ?? []),
-                            )
-                        }
-                    />
-                    <Button onClick={() => void onShare()}>{shareLabel}</Button>
-                    {isRoot && (
-                        <Button
-                            variant="danger"
-                            onClick={() => void onDelete()}
-                        >
-                            Delete
-                        </Button>
-                    )}
-                </div>
-            </header>
+            <Header
+                title={title}
+                meta={meta}
+                currentId={id}
+                recentItems={recentItems}
+                isRoot={isRoot}
+                subPath={subPath}
+                onDeleted={() => setDeleted(true)}
+                onReload={() => setReloadToken((token) => token + 1)}
+                onError={setActionError}
+            />
 
             {actionError !== null && (
                 <p

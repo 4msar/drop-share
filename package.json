@@ -14,12 +14,14 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "clsx": "^2.1.1",
     "fflate": "^0.8.3",
     "hono": "^4.13.4",
     "marked": "^18.0.10",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
-    "react-router": "^8.3.0"
+    "react-router": "^8.3.0",
+    "tailwind-merge": "^3.6.0"
   },
   "devDependencies": {
     "@cloudflare/vite-plugin": "^1.53.1",
