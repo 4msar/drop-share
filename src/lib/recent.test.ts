@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { addRecentItem, getRecentItems } from "./recent";
+import { addRecentItem, getRecentItems, removeRecentItem } from "./recent";
 
 afterEach(() => {
   localStorage.clear();
@@ -49,5 +49,25 @@ describe("addRecentItem", () => {
       { id: "new", visitedAt: 3000 },
       { id: "mid", visitedAt: 2000 },
     ]);
+  });
+});
+
+describe("removeRecentItem", () => {
+  it("removes the matching id from recent items", () => {
+    addRecentItem("first", 1000);
+    addRecentItem("second", 2000);
+
+    const items = removeRecentItem("second");
+
+    expect(items).toEqual([{ id: "first", visitedAt: 1000 }]);
+    expect(getRecentItems()).toEqual([{ id: "first", visitedAt: 1000 }]);
+  });
+
+  it("returns the current list when the id is not present", () => {
+    addRecentItem("first", 1000);
+
+    const items = removeRecentItem("missing");
+
+    expect(items).toEqual([{ id: "first", visitedAt: 1000 }]);
   });
 });

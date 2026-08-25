@@ -314,6 +314,9 @@ describe("artifact actions", () => {
     it("confirms before deleting, then reports the artifact is gone", async () => {
         const fetchMock = stubListing({ files: [file("a.txt")] });
         await renderViewer();
+        await waitFor(() =>
+            expect(getRecentItems().some((item) => item.id === ID)).toBe(true),
+        );
 
         screen.getByRole("button", { name: "Delete" }).click();
 
@@ -328,6 +331,9 @@ describe("artifact actions", () => {
             ).toBe(true);
         });
         expect(await screen.findByText(/artifact deleted/i)).toBeTruthy();
+        await waitFor(() =>
+            expect(getRecentItems().some((item) => item.id === ID)).toBe(false),
+        );
     });
 
     it("does not delete when the confirmation is declined", async () => {
