@@ -1,9 +1,31 @@
 import { Link } from "react-router";
 import type { ArtifactFile } from "../lib/artifact";
 import { fileUrl, parentPath } from "../lib/artifact";
-import { fileIcon, formatBytes } from "../lib/format";
+import {
+    ARCHIVE_EXTENSIONS,
+    formatBytes,
+    IMAGE_EXTENSIONS,
+} from "../lib/format";
 import { cn } from "../lib/utils";
-import { ChevronIcon, FolderIcon, ParentFolderIcon } from "./Icons";
+import {
+    ArchiveIcon,
+    ChevronIcon,
+    FileIcon,
+    FolderIcon,
+    ImageIcon,
+    ParentFolderIcon,
+    PdfFileIcon,
+} from "./Icons";
+
+/** A glyph hint for a file row in the viewer sidebar. Cosmetic only. */
+function fileIcon(name: string) {
+    const extension = name.slice(name.lastIndexOf(".") + 1).toLowerCase();
+
+    if (IMAGE_EXTENSIONS.has(extension)) return <ImageIcon />;
+    if (ARCHIVE_EXTENSIONS.has(extension)) return <ArchiveIcon />;
+    if (extension === "pdf") return <PdfFileIcon />;
+    return <FileIcon />;
+}
 
 const ROW =
     "flex h-9 items-center gap-2 rounded-md px-2.5 py-1 hover:bg-brand-soft " +
@@ -53,7 +75,7 @@ export function FileList({
     return (
         <nav
             aria-label="Files in this artifact"
-            className={`${open ? "" : "max-md:h-9 md:w-0 md:overflow-visible"} relative overflow-y-auto border-edge max-md:max-h-[25vh] max-md:border-b md:border-r md:transition-[width] md:duration-200`}
+            className={`${open ? "" : "max-md:h-9 md:w-0 md:overflow-visible"} relative overflow-x-visible overflow-y-auto border-edge max-md:max-h-[25vh] max-md:border-b md:border-r md:transition-[width] md:duration-200`}
         >
             <button
                 type="button"

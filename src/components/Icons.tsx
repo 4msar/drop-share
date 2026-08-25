@@ -1,128 +1,136 @@
-import type { SVGProps } from "react";
+import type { PropsWithChildren, SVGProps } from "react";
 import { cn } from "../lib/utils";
 
-export const ImageIcon = ({ className, ...rest }: SVGProps<SVGSVGElement>) => (
+const CommonIconProps: Partial<SVGProps<SVGSVGElement>> = {
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: "2",
+    strokeLinecap: "round",
+    strokeLinejoin: "round",
+};
+
+const Icon = ({
+    children,
+    className,
+    ...props
+}: PropsWithChildren<SVGProps<SVGSVGElement>>) => (
     <svg
+        {...CommonIconProps}
+        {...props}
         className={cn("size-4 inline-block", className)}
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        stroke-width="2"
-        stroke-linecap="round"
-        stroke-linejoin="round"
-        {...rest}
     >
-        <rect width="18" height="18" x="3" y="3" rx="2" ry="2" />
-        <circle cx="9" cy="9" r="2" />
-        <path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21" />
+        {children}
     </svg>
 );
 
-export const ThemeIcon = ({ className, ...rest }: SVGProps<SVGSVGElement>) => (
-    <svg
-        className={cn("size-4 inline-block", className)}
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        stroke-width="2"
-        stroke-linecap="round"
-        stroke-linejoin="round"
-        {...rest}
-    >
+export const ImageIcon = (props: SVGProps<SVGSVGElement>) => (
+    <Icon {...props}>
+        <rect width="18" height="18" x="3" y="3" rx="2" ry="2" />
+        <circle cx="9" cy="9" r="2" />
+        <path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21" />
+    </Icon>
+);
+export const FileIcon = (props: SVGProps<SVGSVGElement>) => (
+    <Icon {...props}>
+        <path d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z" />
+        <path d="M14 2v5a1 1 0 0 0 1 1h5" />
+        <path d="M10 9H8" />
+        <path d="M16 13H8" />
+        <path d="M16 17H8" />
+    </Icon>
+);
+export const PdfFileIcon = (props: SVGProps<SVGSVGElement>) => (
+    <Icon {...props}>
+        <path d="M2 6h4" />
+        <path d="M2 10h4" />
+        <path d="M2 14h4" />
+        <path d="M2 18h4" />
+        <rect width="16" height="20" x="4" y="2" rx="2" />
+        <path d="M9.5 8h5" />
+        <path d="M9.5 12H16" />
+        <path d="M9.5 16H14" />
+    </Icon>
+);
+
+export const ArchiveIcon = (props: SVGProps<SVGSVGElement>) => (
+    <Icon {...props}>
+        <path d="M13.659 22H18a2 2 0 0 0 2-2V8a2.4 2.4 0 0 0-.706-1.706l-3.588-3.588A2.4 2.4 0 0 0 14 2H6a2 2 0 0 0-2 2v11.5" />
+        <path d="M14 2v5a1 1 0 0 0 1 1h5" />
+        <path d="M8 12v-1" />
+        <path d="M8 18v-2" />
+        <path d="M8 7V6" />
+        <circle cx="8" cy="20" r="2" />
+    </Icon>
+);
+
+export const ShareIcon = (props: SVGProps<SVGSVGElement>) => (
+    <Icon {...props}>
+        <circle cx="18" cy="5" r="3" />
+        <circle cx="6" cy="12" r="3" />
+        <circle cx="18" cy="19" r="3" />
+        <line x1="8.59" x2="15.42" y1="13.51" y2="17.49" />
+        <line x1="15.41" x2="8.59" y1="6.51" y2="10.49" />
+    </Icon>
+);
+
+export const TrashIcon = (props: SVGProps<SVGSVGElement>) => (
+    <Icon {...props}>
+        <path d="M10 11v6" />
+        <path d="M14 11v6" />
+        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
+        <path d="M3 6h18" />
+        <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+    </Icon>
+);
+
+export const ThemeIcon = (props: SVGProps<SVGSVGElement>) => (
+    <Icon {...props}>
         <path d="M12 22a1 1 0 0 1 0-20 10 9 0 0 1 10 9 5 5 0 0 1-5 5h-2.25a1.75 1.75 0 0 0-1.4 2.8l.3.4a1.75 1.75 0 0 1-1.4 2.8z" />
         <circle cx="13.5" cy="6.5" r=".5" fill="currentColor" />
         <circle cx="17.5" cy="10.5" r=".5" fill="currentColor" />
         <circle cx="6.5" cy="12.5" r=".5" fill="currentColor" />
         <circle cx="8.5" cy="7.5" r=".5" fill="currentColor" />
-    </svg>
+    </Icon>
 );
 
-export const ActionIcon = ({ className, ...rest }: SVGProps<SVGSVGElement>) => (
-    <svg
-        className={cn("size-4 inline-block", className)}
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        stroke-width="2"
-        stroke-linecap="round"
-        stroke-linejoin="round"
-        {...rest}
-    >
+export const ActionIcon = (props: SVGProps<SVGSVGElement>) => (
+    <Icon {...props}>
         <path d="M4 5h16" />
         <path d="M4 12h16" />
         <path d="M4 19h16" />
-    </svg>
+    </Icon>
 );
 
-export const FolderIcon = ({ className, ...rest }: SVGProps<SVGSVGElement>) => (
-    <svg
-        className={cn("size-4 inline-block", className)}
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        stroke-width="2"
-        stroke-linecap="round"
-        stroke-linejoin="round"
-        {...rest}
-    >
+export const FolderIcon = (props: SVGProps<SVGSVGElement>) => (
+    <Icon {...props}>
         <path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z" />
         <path d="M12 10v6" />
         <path d="m9 13 3-3 3 3" />
-    </svg>
+    </Icon>
 );
-export const ParentFolderIcon = ({
-    className,
-    ...rest
-}: SVGProps<SVGSVGElement>) => (
-    <svg
-        className={cn("size-4 inline-block", className)}
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        stroke-width="2"
-        stroke-linecap="round"
-        stroke-linejoin="round"
-        {...rest}
-    >
+export const ParentFolderIcon = (props: SVGProps<SVGSVGElement>) => (
+    <Icon {...props}>
         <path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z" />
-    </svg>
+    </Icon>
 );
 
 export const ChevronIcon = ({
     type = "down",
-    className,
-    ...rest
+    ...props
 }: SVGProps<SVGSVGElement>) => (
-    <svg
-        className={cn("size-4 inline-block", className)}
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        stroke-width="2"
-        stroke-linecap="round"
-        stroke-linejoin="round"
-        {...rest}
-    >
+    <Icon {...props}>
         {type === "down" && <path d="m6 9 6 6 6-6" />}
 
         {type === "left" && <path d="m9 18 6-6-6-6" />}
         {type === "right" && <path d="m15 18-6-6 6-6" />}
 
         {type === "up" && <path d="m6 15 6-6 6 6" />}
-    </svg>
+    </Icon>
 );
 
-export const UploadIcon = ({ className, ...rest }: SVGProps<SVGSVGElement>) => (
-    <svg
-        className={cn("size-4 inline-block", className)}
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        stroke-width="2"
-        stroke-linecap="round"
-        stroke-linejoin="round"
-        {...rest}
-    >
+export const UploadIcon = (props: SVGProps<SVGSVGElement>) => (
+    <Icon {...props}>
         <path
             d="M7 18a4.5 4.5 0 0 1-.4-8.98A5.5 5.5 0 0 1 17.5 8a4 4 0 0 1 .5 7.98"
             stroke="currentColor"
@@ -137,5 +145,5 @@ export const UploadIcon = ({ className, ...rest }: SVGProps<SVGSVGElement>) => (
             strokeLinecap="round"
             strokeLinejoin="round"
         />
-    </svg>
+    </Icon>
 );
