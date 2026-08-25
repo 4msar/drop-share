@@ -1,7 +1,13 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "./Button";
 import { type ArtifactFile, fileUrl, previewUrl } from "../lib/artifact";
-import { ChevronIcon } from "./Icons";
+import {
+    ChevronIcon,
+    CodeIcon,
+    EyeIcon,
+    FullscreenEnterIcon,
+    FullscreenExitIcon,
+} from "./Icons";
 import { cn } from "../lib/utils";
 
 interface PreviewPaneProps {
@@ -21,14 +27,46 @@ export function PreviewPane({
     sidebarOpen,
     onToggle,
 }: PreviewPaneProps) {
+    const sectionRef = useRef<HTMLElement | null>(null);
     const [sourceMode, setSourceMode] = useState<{
         fileName: string;
         showing: boolean;
     } | null>(null);
+    const [isFullscreen, setIsFullscreen] = useState(false);
     const showSource =
         selected !== null &&
         sourceMode?.fileName === selected.name &&
         sourceMode.showing;
+
+    useEffect(() => {
+        const onFullscreenChange = () => {
+            setIsFullscreen(document.fullscreenElement === sectionRef.current);
+        };
+
+        document.addEventListener("fullscreenchange", onFullscreenChange);
+        return () =>
+            document.removeEventListener(
+                "fullscreenchange",
+                onFullscreenChange,
+            );
+    }, []);
+
+    const toggleFullscreen = async () => {
+        if (!sectionRef.current) {
+            return;
+        }
+
+        try {
+            if (document.fullscreenElement === sectionRef.current) {
+                await document.exitFullscreen();
+                return;
+            }
+
+            await sectionRef.current.requestFullscreen();
+        } catch {
+            // Ignore browser/runtime fullscreen errors to avoid breaking preview UI.
+        }
+    };
 
     const src =
         selected === null
@@ -43,7 +81,7 @@ export function PreviewPane({
             : "No preview available for these files — click one in the list to download it.";
 
     return (
-        <section className="relative flex min-h-0 bg-surface">
+        <section ref={sectionRef} className="relative flex min-h-0 bg-surface">
             <button
                 type="button"
                 aria-label={sidebarOpen ? "Close file list" : "Open file list"}
@@ -72,27 +110,50 @@ export function PreviewPane({
                 </p>
             ) : (
                 <iframe
+                    title="File preview"
+                    sandbox="allow-scripts allow-same-origin allow-forms"
+                    allow="fullscreen; clipboard-write"
+                    allowFullScreen
                     // Keying on the URL makes a re-preview of the same file remount
                     // rather than leaving the previous document up.
                     key={src}
-                    title="File preview"
                     src={src}
-                    className="flex-1 border-none bg-surface"
+                    className="flex-1 scrollbar-none pl-3 border-none bg-surface"
                 />
             )}
 
-            {selected?.markdown && (
-                <Button
-                    className="absolute top-3 right-3 bg-surface"
-                    onClick={() =>
-                        setSourceMode({
-                            fileName: selected.name,
-                            showing: !showSource,
-                        })
-                    }
-                >
-                    {showSource ? "Show rendered" : "Show source"}
-                </Button>
+            {src !== null && (
+                <div className="absolute top-3 right-3 flex items-center gap-2">
+                    {selected?.markdown && (
+                        <Button
+                            className="bg-surface p-2"
+                            title={showSource ? "Show preview" : "Show source"}
+                            onClick={() =>
+                                setSourceMode({
+                                    fileName: selected.name,
+                                    showing: !showSource,
+                                })
+                            }
+                        >
+                            {showSource ? <EyeIcon /> : <CodeIcon />}
+                        </Button>
+                    )}
+                    <Button
+                        className="bg-surface p-2"
+                        title={
+                            isFullscreen
+                                ? "Exit fullscreen"
+                                : "Enter fullscreen"
+                        }
+                        onClick={toggleFullscreen}
+                    >
+                        {isFullscreen ? (
+                            <FullscreenExitIcon />
+                        ) : (
+                            <FullscreenEnterIcon />
+                        )}
+                    </Button>
+                </div>
             )}
         </section>
     );

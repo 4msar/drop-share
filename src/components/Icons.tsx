@@ -147,3 +147,44 @@ export const UploadIcon = (props: SVGProps<SVGSVGElement>) => (
         />
     </Icon>
 );
+
+export const EyeIcon = (props: SVGProps<SVGSVGElement>) => (
+    <Icon {...props}>
+        <path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0" />
+        <circle cx="12" cy="12" r="3" />
+    </Icon>
+);
+
+export const CodeIcon = (props: SVGProps<SVGSVGElement>) => (
+    <Icon {...props}>
+        <path d="m18 16 4-4-4-4" />
+        <path d="m6 8-4 4 4 4" />
+        <path d="m14.5 4-5 16" />
+    </Icon>
+);
+
+export const FullscreenEnterIcon = (props: SVGProps<SVGSVGElement>) => (
+    <Icon {...props}>
+        <path d="M8 3H3v5" />
+        <path d="M3 3l6 6" />
+        <path d="M16 3h5v5" />
+        <path d="M21 3l-6 6" />
+        <path d="M8 21H3v-5" />
+        <path d="M3 21l6-6" />
+        <path d="M16 21h5v-5" />
+        <path d="M21 21l-6-6" />
+    </Icon>
+);
+
+export const FullscreenExitIcon = (props: SVGProps<SVGSVGElement>) => (
+    <Icon {...props}>
+        <path d="M9 9H3V3" />
+        <path d="M3 9l7-7" />
+        <path d="M15 9h6V3" />
+        <path d="M21 9l-7-7" />
+        <path d="M9 15H3v6" />
+        <path d="M3 15l7 7" />
+        <path d="M15 15h6v6" />
+        <path d="M21 15l-7 7" />
+    </Icon>
+);

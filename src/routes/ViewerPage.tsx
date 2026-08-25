@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useNavigate, useParams } from "react-router";
+import { useNavigate, useParams, useSearchParams } from "react-router";
 import { Button } from "../components/Button";
 import { FileList } from "../components/FileList";
 import { Header } from "../components/Header";
@@ -15,11 +15,10 @@ import {
 import { pluralize } from "../lib/format";
 import { addRecentItem, type RecentItem, getRecentItems } from "../lib/recent";
 
-type Selected = ArtifactFile | null;
-
 export default function ViewerPage() {
     const params = useParams();
     const navigate = useNavigate();
+    const [searchParams, setSearchParams] = useSearchParams();
     const id = params.id ?? "";
     // The route's path is what we fetch; what we *render* comes from the
     // listing itself (see `subPath` below), so a folder navigation can never
@@ -28,7 +27,6 @@ export default function ViewerPage() {
 
     const [listing, setListing] = useState<ArtifactListing | null>(null);
     const [loadError, setLoadError] = useState<string | null>(null);
-    const [selected, setSelected] = useState<Selected>(null);
     const [deleted, setDeleted] = useState(false);
     const [actionError, setActionError] = useState<string | null>(null);
     const [reloadToken, setReloadToken] = useState(0);
@@ -36,6 +34,22 @@ export default function ViewerPage() {
     const [recentItems, setRecentItems] = useState<RecentItem[]>(() =>
         getRecentItems(),
     );
+    const selectedFromQuery = searchParams.get("file");
+
+    const setFileQueryParam = (name: string | null, replace = true) => {
+        setSearchParams(
+            (current) => {
+                const next = new URLSearchParams(current);
+                if (name === null) {
+                    next.delete("file");
+                } else {
+                    next.set("file", name);
+                }
+                return next;
+            },
+            { replace },
+        );
+    };
 
     useEffect(() => {
         // `cancelled` matters because navigating between folders quickly can leave
@@ -48,8 +62,6 @@ export default function ViewerPage() {
                 if (cancelled) return;
                 setListing(next);
                 setLoadError(null);
-                const preview = pickDefaultPreview(sortFiles(next.files));
-                setSelected(preview);
                 setRecentItems(addRecentItem(id));
             },
             (error: unknown) => {
@@ -75,6 +87,25 @@ export default function ViewerPage() {
                 ? `${id} · Drop Share`
                 : `${id}/${routePath} · Drop Share`;
     }, [id, routePath]);
+
+    useEffect(() => {
+        const handleResize = () => {
+            if (window.innerWidth < 768) {
+                setFileListOpen(false);
+            } else {
+                setFileListOpen(true);
+            }
+        };
+
+        window.addEventListener("resize", handleResize);
+
+        // Call the handler immediately to set the initial state
+        handleResize();
+
+        return () => {
+            window.removeEventListener("resize", handleResize);
+        };
+    }, []);
 
     if (deleted) {
         return (
@@ -124,6 +155,14 @@ export default function ViewerPage() {
     }
 
     const files = sortFiles(listing.files);
+    const selectedFromFiles =
+        selectedFromQuery !== null
+            ? files.find(
+                  (file) => file.name === selectedFromQuery && file.previewable,
+              )
+            : undefined;
+    const selected: ArtifactFile | null =
+        selectedFromFiles ?? pickDefaultPreview(files);
     const directories = listing.directories.slice().sort();
     const subPath = listing.path;
     const isRoot = subPath === "";
@@ -171,7 +210,7 @@ export default function ViewerPage() {
                     files={files}
                     directories={directories}
                     activeName={selected?.name ?? null}
-                    onPreview={setSelected}
+                    onPreview={(file) => setFileQueryParam(file.name, false)}
                     open={fileListOpen}
                 />
                 <PreviewPane
