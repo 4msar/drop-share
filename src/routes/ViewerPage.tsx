@@ -159,7 +159,7 @@ export default function ViewerPage() {
             )}
 
             <div
-                className={`grid min-h-0 flex-1 transition-all duration-200 ease-out max-md:grid-rows-[auto_1fr] ${
+                className={`grid min-h-0 flex-1 transition-[grid-template-columns,grid-template-rows] duration-200 ease-out max-md:grid-rows-[auto_1fr] ${
                     fileListOpen
                         ? "md:grid-cols-[280px_1fr]"
                         : "md:grid-cols-[0_1fr]"

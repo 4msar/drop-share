@@ -72,10 +72,10 @@ export function FileList({
     return (
         <nav
             aria-label="Files in this artifact"
-            className={`transition-all duration-200 ease-out ${open ? "" : "max-md:h-9 md:w-0 md:overflow-visible"} relative overflow-x-visible overflow-y-auto border-edge max-md:max-h-[25vh] max-md:border-b md:border-r`}
+            className={`relative overflow-x-visible overflow-y-auto border-edge transition-[max-height,width] duration-200 ease-out ${open ? "max-md:max-h-[25vh] max-md:border-b md:border-r" : "max-md:max-h-0 max-md:overflow-hidden md:w-0 md:overflow-visible"}`}
         >
             <ul
-                className={`flex flex-col gap-1 p-2 transition-all duration-300 ease-out  ${open ? "" : "max-md:hidden md:invisible"}`}
+                className={`flex flex-col gap-1 p-2 transition-opacity duration-200 ease-out ${open ? "opacity-100" : "pointer-events-none opacity-0"}`}
             >
                 {parent !== null && (
                     <li className={ROW}>

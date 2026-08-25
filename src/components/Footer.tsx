@@ -20,18 +20,7 @@ export const Footer = () => {
                         stroke-linecap="round"
                         stroke-linejoin="round"
                     >
-                        <rect width="5" height="5" x="3" y="3" rx="1" />
-                        <rect width="5" height="5" x="16" y="3" rx="1" />
-                        <rect width="5" height="5" x="3" y="16" rx="1" />
-                        <path d="M21 16h-3a2 2 0 0 0-2 2v3" />
-                        <path d="M21 21v.01" />
-                        <path d="M12 7v3a2 2 0 0 1-2 2H7" />
-                        <path d="M3 12h.01" />
-                        <path d="M12 3h.01" />
-                        <path d="M12 16v.01" />
-                        <path d="M16 12h1" />
-                        <path d="M21 12v.01" />
-                        <path d="M12 21v-1" />
+                        <path d="M2 9.5a5.5 5.5 0 0 1 9.591-3.676.56.56 0 0 0 .818 0A5.49 5.49 0 0 1 22 9.5c0 2.29-1.5 4-3 5.5l-5.492 5.313a2 2 0 0 1-3 .019L5 15c-1.5-1.5-3-3.2-3-5.5" />
                     </svg>
                 </a>
                 |
