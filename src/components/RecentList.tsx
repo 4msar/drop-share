@@ -15,7 +15,7 @@ export function RecentList({
     className = "",
 }: RecentListProps & { className?: string }) {
     return (
-        <ul className={`flex flex-col px-1 gap-1 ${className}`}>
+        <ul className={`flex flex-col p-1 gap-1 ${className}`}>
             {items.map((item) => {
                 const isCurrent = item.id === currentId;
                 const label = (
@@ -33,7 +33,7 @@ export function RecentList({
                         {isCurrent ? (
                             <span
                                 aria-current="page"
-                                className="block rounded-lg px-3 py-2 text-left text-brand"
+                                className="block rounded-lg px-3 py-2 text-left text-brand bg-panel"
                             >
                                 {label}
                             </span>
