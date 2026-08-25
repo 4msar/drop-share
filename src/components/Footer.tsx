@@ -1,3 +1,5 @@
+import { toggleTheme } from "../lib/theme";
+
 export const Footer = () => {
     return (
         <footer className="mt-5 text-center text-[10px] text-body">
@@ -24,9 +26,17 @@ export const Footer = () => {
                 |
                 <button
                     className="text-brand"
-                    onClick={() =>
-                        document.documentElement.classList.toggle("dark")
-                    }
+                    onClick={() => {
+                        const prefersDark = window.matchMedia(
+                            "(prefers-color-scheme: dark)",
+                        ).matches;
+                        const next = toggleTheme(
+                            document.documentElement,
+                            prefersDark,
+                        );
+                        document.documentElement.style.colorScheme = next;
+                    }}
+                    title="Toggle theme"
                 >
                     theme
                 </button>

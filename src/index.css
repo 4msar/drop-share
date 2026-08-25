@@ -8,6 +8,11 @@
  * generates utilities like `bg-surface` / `text-heading`. Referencing the
  * flipping variable from @theme means one class works in both schemes, so
  * there is no `dark:` pair on every coloured element.
+ *
+ * An explicit `dark`/`light` class on <html> (set by the theme toggle) always
+ * wins over the system preference: `:not(.light)` lets the media query apply
+ * unless the user forced light, and `:root.dark` forces dark even when the
+ * system preference is light.
  */
 :root {
   --surface: #ffffff;
@@ -20,8 +25,19 @@
   --brand-edge: rgb(170 59 255 / 0.5);
 }
 
+:root.dark {
+  --surface: #16171d;
+  --panel: #1f2028;
+  --body: #9ca3af;
+  --heading: #f3f4f6;
+  --edge: #2e303a;
+  --brand: #c084fc;
+  --brand-soft: rgb(192 132 252 / 0.15);
+  --brand-edge: rgb(192 132 252 / 0.5);
+}
+
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not(.light) {
     --surface: #16171d;
     --panel: #1f2028;
     --body: #9ca3af;
