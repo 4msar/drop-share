@@ -5,7 +5,13 @@ import { RecentSwitcher } from "./RecentSwitcher";
 import { deleteArtifact, uploadIntoArtifact } from "../lib/artifact";
 import type { RecentItem } from "../lib/recent";
 import { toggleTheme } from "../lib/theme";
-import { ActionIcon, ThemeIcon } from "./Icons";
+import {
+    ActionIcon,
+    ShareIcon,
+    ThemeIcon,
+    TrashIcon,
+    UploadIcon,
+} from "./Icons";
 
 const DELETED_REDIRECT_DELAY_MS = 3000;
 const COPY_FEEDBACK_MS = 1500;
@@ -168,8 +174,9 @@ export function Header({
                                         delayedAction();
                                         void onShare();
                                     }}
-                                    className="flex h-8 w-full items-center rounded-md px-2.5 text-left text-xs text-heading hover:bg-brand-soft"
+                                    className="flex h-8 w-full items-center gap-2 rounded-md px-2.5 text-left text-xs text-heading hover:bg-brand-soft"
                                 >
+                                    <ShareIcon className="size-3.5 shrink-0" />
                                     {shareLabel}
                                 </button>
                                 <button
@@ -179,8 +186,9 @@ export function Header({
                                         delayedAction();
                                         uploadInputRef.current?.click();
                                     }}
-                                    className="flex h-8 w-full items-center rounded-md px-2.5 text-left text-xs text-heading hover:bg-brand-soft disabled:opacity-60"
+                                    className="flex h-8 w-full items-center gap-2 rounded-md px-2.5 text-left text-xs text-heading hover:bg-brand-soft disabled:opacity-60"
                                 >
+                                    <UploadIcon className="size-3.5 shrink-0" />
                                     {uploading ? "Uploading…" : "Upload more"}
                                 </button>
                                 {isRoot && (
@@ -191,8 +199,9 @@ export function Header({
                                             delayedAction();
                                             void onDelete();
                                         }}
-                                        className="flex h-8 w-full items-center rounded-md px-2.5 text-left text-xs text-red-500 hover:bg-red-500/10"
+                                        className="flex h-8 w-full items-center gap-2 rounded-md px-2.5 text-left text-xs text-red-500 hover:bg-red-500/10"
                                     >
+                                        <TrashIcon className="size-3.5 shrink-0" />
                                         Delete
                                     </button>
                                 )}

@@ -9,15 +9,13 @@ import {
     type ArtifactListing,
     ArtifactNotFoundError,
     fetchArtifactListing,
-    fileUrl,
     pickDefaultPreview,
-    previewUrl,
     sortFiles,
 } from "../lib/artifact";
 import { pluralize } from "../lib/format";
 import { addRecentItem, type RecentItem, getRecentItems } from "../lib/recent";
 
-type Selected = { file: ArtifactFile; showSource: boolean } | null;
+type Selected = ArtifactFile | null;
 
 export default function ViewerPage() {
     const params = useParams();
@@ -51,9 +49,7 @@ export default function ViewerPage() {
                 setListing(next);
                 setLoadError(null);
                 const preview = pickDefaultPreview(sortFiles(next.files));
-                setSelected(
-                    preview ? { file: preview, showSource: false } : null,
-                );
+                setSelected(preview);
                 setRecentItems(addRecentItem(id));
             },
             (error: unknown) => {
@@ -139,18 +135,6 @@ export default function ViewerPage() {
         .filter(Boolean)
         .join(", ");
 
-    const previewSrc =
-        selected === null
-            ? null
-            : selected.showSource
-              ? fileUrl(id, subPath, selected.file.name)
-              : previewUrl(id, subPath, selected.file);
-
-    const placeholder =
-        files.length === 0
-            ? "This folder only contains subfolders — open one from the list."
-            : "No preview available for these files — click one in the list to download it.";
-
     return (
         <div className="flex h-dvh flex-col">
             <Header
@@ -175,7 +159,7 @@ export default function ViewerPage() {
             )}
 
             <div
-                className={`grid min-h-0 flex-1 max-md:grid-rows-[auto_1fr] ${
+                className={`grid min-h-0 flex-1 transition-all duration-200 ease-out max-md:grid-rows-[auto_1fr] ${
                     fileListOpen
                         ? "md:grid-cols-[280px_1fr]"
                         : "md:grid-cols-[0_1fr]"
@@ -186,28 +170,17 @@ export default function ViewerPage() {
                     subPath={subPath}
                     files={files}
                     directories={directories}
-                    activeName={selected?.file.name ?? null}
-                    onPreview={(file) =>
-                        setSelected({ file, showSource: false })
-                    }
+                    activeName={selected?.name ?? null}
+                    onPreview={setSelected}
                     open={fileListOpen}
-                    onToggle={() => setFileListOpen((open) => !open)}
                 />
                 <PreviewPane
-                    src={previewSrc}
-                    placeholder={placeholder}
-                    canToggleSource={selected?.file.markdown ?? false}
-                    showingSource={selected?.showSource ?? false}
-                    onToggleSource={() =>
-                        setSelected((current) =>
-                            current === null
-                                ? null
-                                : {
-                                      ...current,
-                                      showSource: !current.showSource,
-                                  },
-                        )
-                    }
+                    id={id}
+                    subPath={subPath}
+                    files={files}
+                    selected={selected}
+                    sidebarOpen={fileListOpen}
+                    onToggle={() => setFileListOpen((open) => !open)}
                 />
             </div>
         </div>

@@ -9,7 +9,6 @@ import {
 import { cn } from "../lib/utils";
 import {
     ArchiveIcon,
-    ChevronIcon,
     FileIcon,
     FolderIcon,
     ImageIcon,
@@ -57,7 +56,6 @@ interface FileListProps {
     activeName: string | null;
     onPreview: (file: ArtifactFile) => void;
     open: boolean;
-    onToggle: () => void;
 }
 
 export function FileList({
@@ -68,29 +66,16 @@ export function FileList({
     activeName,
     onPreview,
     open,
-    onToggle,
 }: FileListProps) {
     const parent = parentPath(subPath);
 
     return (
         <nav
             aria-label="Files in this artifact"
-            className={`${open ? "" : "max-md:h-9 md:w-0 md:overflow-visible"} relative overflow-x-visible overflow-y-auto border-edge max-md:max-h-[25vh] max-md:border-b md:border-r md:transition-[width] md:duration-200`}
+            className={`transition-all duration-200 ease-out ${open ? "" : "max-md:h-9 md:w-0 md:overflow-visible"} relative overflow-x-visible overflow-y-auto border-edge max-md:max-h-[25vh] max-md:border-b md:border-r`}
         >
-            <button
-                type="button"
-                aria-label={open ? "Close file list" : "Open file list"}
-                aria-expanded={open}
-                onClick={onToggle}
-                className="absolute right-0 top-2 z-10 grid size-7 translate-x-full place-items-center rounded-r-md border border-l-0 border-edge bg-panel text-sm text-body shadow-sm hover:text-brand md:top-2"
-            >
-                <ChevronIcon
-                    type={open ? "left" : "right"}
-                    className="size-3"
-                />
-            </button>
             <ul
-                className={`flex flex-col gap-1 p-2 ${open ? "" : "max-md:hidden md:invisible"}`}
+                className={`flex flex-col gap-1 p-2 transition-all duration-300 ease-out  ${open ? "" : "max-md:hidden md:invisible"}`}
             >
                 {parent !== null && (
                     <li className={ROW}>
