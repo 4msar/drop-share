@@ -201,7 +201,7 @@ export default function ViewerPage() {
                 className={`grid min-h-0 flex-1 transition-[grid-template-columns,grid-template-rows] duration-200 ease-out max-md:grid-rows-[auto_1fr] ${
                     fileListOpen
                         ? "md:grid-cols-[280px_1fr]"
-                        : "md:grid-cols-[0_1fr]"
+                        : "md:grid-cols-[36px_1fr]"
                 }`}
             >
                 <FileList

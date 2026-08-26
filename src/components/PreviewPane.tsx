@@ -68,6 +68,10 @@ export function PreviewPane({
         }
     };
 
+    const supportFullscreen =
+        document.fullscreenEnabled &&
+        "requestFullscreen" in HTMLElement.prototype;
+
     const src =
         selected === null
             ? null
@@ -88,7 +92,7 @@ export function PreviewPane({
                 aria-expanded={sidebarOpen}
                 onClick={onToggle}
                 className={cn(
-                    "absolute left-1/2 top-0 z-10 grid h-4 w-8 -translate-x-1/2 place-items-center rounded-b-md border border-t-0 border-edge bg-panel text-sm text-body shadow-sm transition-colors hover:text-brand md:left-0 md:top-1/2 md:h-8 md:w-4 md:translate-x-0 md:-translate-y-1/2 md:rounded-r-md md:rounded-l-none md:border-l-0 md:border-t",
+                    "absolute left-1/2 top-0 z-10 grid h-5 w-9 -translate-x-1/2 place-items-center rounded-b-md border border-t-0 border-edge bg-panel text-sm text-body shadow-sm transition-colors hover:text-brand md:-left-4 md:top-1/2 md:h-8 md:w-4 md:translate-x-0 md:size-8 md:-translate-y-1/2 md:rounded-full md:border",
                     sidebarOpen
                         ? "cursor-n-resize md:cursor-w-resize"
                         : "cursor-s-resize md:cursor-e-resize",
@@ -96,11 +100,11 @@ export function PreviewPane({
             >
                 <ChevronIcon
                     type={sidebarOpen ? "up" : "down"}
-                    className="size-3 md:hidden"
+                    className="size-4 md:hidden"
                 />
                 <ChevronIcon
                     type={sidebarOpen ? "right" : "left"}
-                    className="hidden size-3 md:inline-block"
+                    className="hidden size-4 md:inline-block"
                 />
             </button>
 
@@ -138,21 +142,23 @@ export function PreviewPane({
                             {showSource ? <EyeIcon /> : <CodeIcon />}
                         </Button>
                     )}
-                    <Button
-                        className="bg-surface p-2"
-                        title={
-                            isFullscreen
-                                ? "Exit fullscreen"
-                                : "Enter fullscreen"
-                        }
-                        onClick={toggleFullscreen}
-                    >
-                        {isFullscreen ? (
-                            <FullscreenExitIcon />
-                        ) : (
-                            <FullscreenEnterIcon />
-                        )}
-                    </Button>
+                    {supportFullscreen && (
+                        <Button
+                            className="bg-surface p-2"
+                            title={
+                                isFullscreen
+                                    ? "Exit fullscreen"
+                                    : "Enter fullscreen"
+                            }
+                            onClick={toggleFullscreen}
+                        >
+                            {isFullscreen ? (
+                                <FullscreenExitIcon />
+                            ) : (
+                                <FullscreenEnterIcon />
+                            )}
+                        </Button>
+                    )}
                 </div>
             )}
         </section>

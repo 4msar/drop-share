@@ -72,7 +72,7 @@ export function FileList({
     return (
         <nav
             aria-label="Files in this artifact"
-            className={`relative overflow-x-visible overflow-y-auto border-edge transition-[max-height,width] duration-200 ease-out ${open ? "max-md:max-h-[25vh] max-md:border-b md:border-r" : "max-md:max-h-0 max-md:overflow-hidden md:w-0 md:overflow-visible"}`}
+            className={`relative overflow-hidden border-edge transition-[max-height,width] duration-200 ease-out ${open ? "overflow-x-visible overflow-y-auto max-md:max-h-[25vh] max-md:border-b md:border-r" : "max-md:max-h-0 max-md:border-b md:w-9 md:border-r"}`}
         >
             <ul
                 className={`flex flex-col gap-1 p-2 transition-opacity duration-200 ease-out ${open ? "opacity-100" : "pointer-events-none opacity-0"}`}
@@ -140,6 +140,18 @@ export function FileList({
                     );
                 })}
             </ul>
+
+            {!open && (
+                <div
+                    aria-hidden="true"
+                    className="hidden pointer-events-none absolute inset-0 md:grid place-items-center text-[10px] font-medium uppercase tracking-[0.18em] text-body/60"
+                >
+                    {/* letter-spacing: 24px;line-height: 22px;rotate: -90deg;left: -56px;position: relative;top: -16px; */}
+                    <span className="md:-rotate-90 leading-6 -left-14 relative bottom-2 tracking-[24px]">
+                        Files
+                    </span>
+                </div>
+            )}
         </nav>
     );
 }
