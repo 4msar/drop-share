@@ -163,6 +163,12 @@ export const CodeIcon = (props: SVGProps<SVGSVGElement>) => (
     </Icon>
 );
 
+export const CheckIcon = (props: SVGProps<SVGSVGElement>) => (
+    <Icon {...props}>
+        <path d="M20 6 9 17l-5-5" />
+    </Icon>
+);
+
 export const FullscreenEnterIcon = (props: SVGProps<SVGSVGElement>) => (
     <Icon {...props}>
         <path d="M8 3H3v5" />

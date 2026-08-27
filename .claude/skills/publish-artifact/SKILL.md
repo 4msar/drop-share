@@ -1,6 +1,6 @@
 ---
 name: publish-artifact
-description: Upload a local file, ZIP, or folder to a drop-share server and report back its shareable URL. Re-running it on the same path updates that artifact instead of creating a new one.
+description: Upload a local file, ZIP, or folder to a drop-share server and report back its shareable URL. Re-running it in the same directory updates that artifact instead of creating a new one.
 argument-hint: "[path] [--extract] [--server <url>] [--name <name>] [--new]"
 disable-model-invocation: true
 allowed-tools: Bash
@@ -12,22 +12,25 @@ Publish a local artifact to drop-share.
    folder to publish before running anything.
 2. Otherwise run, using the Bash tool:
 
-   ```
-   npx --yes drop-and-share upload $ARGUMENTS
-   ```
+    ```
+    npx --yes drop-and-share upload $ARGUMENTS
+    ```
 
-   (`--yes` skips npx's "ok to install this package?" prompt on a machine
-   that hasn't run it before.)
+    (`--yes` skips npx's "ok to install this package?" prompt on a machine
+    that hasn't run it before.)
+
 3. If it succeeds, report back exactly the URL the command printed, as a
    clickable link. The command prints one of two labels right before the
    URL:
-   - `Artifact:` — a brand-new artifact was created. Report it as
-     "Published: <url>".
-   - `Updated artifact:` — this local path was published before, so the
-     existing artifact was updated in place (new/changed files added,
-     everything else left alone). Report it as "Updated: <url>".
-   Never invent or guess a URL - only report one that actually appeared in
-   the command's output.
+    - `Artifact:` — a brand-new artifact was created. Report it as
+      "Published: <url>".
+
+- `Updated artifact:` — this directory was published before, so the
+  existing artifact was updated in place (new/changed files added,
+  everything else left alone). Report it as "Updated: <url>".
+  Never invent or guess a URL - only report one that actually appeared in
+  the command's output.
+
 4. If it fails, show the user the exact error line from the command's
    output. Don't retry silently or reinterpret the error.
 5. If the current chat has already an artifact published, keep the id so next time you can use it for update or new upload.
@@ -38,10 +41,11 @@ directly relevant to what happened):
 - `drop-and-share` is the published npm package name; the CLI binary it
   installs is `drop-share`. No install step is needed - `npx` handles it,
   the only prerequisite is Node.js 18+.
-- drop-share remembers what a local path was published as (in
-  `~/.drop-share/state.json`), so running `upload` again on the same path
-  updates that same artifact rather than creating a new one. Pass `--new`
-  to force a brand-new artifact instead. There's also an explicit
+- drop-share remembers what a local directory was published as (in
+  `~/.drop-share/state.json`), so running `upload` again in that directory
+  updates that same artifact rather than creating a new one. Bundled files
+  use their common parent directory. Pass `--new` to force a brand-new
+  artifact instead. There's also an explicit
   `npx --yes drop-and-share update <path>` command, which fails clearly
   (without any network call) if that path was never published before.
 - A `.zip` path uploads unchanged by default; add `--extract` to have the

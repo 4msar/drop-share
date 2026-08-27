@@ -14,6 +14,8 @@ import {
 } from "../lib/artifact";
 import { pluralize } from "../lib/format";
 import { addRecentItem, type RecentItem, getRecentItems } from "../lib/recent";
+import { ArchiveIcon, CheckIcon } from "../components/Icons";
+import { ProgressBarWithTimeout } from "../components/ProgressBar";
 
 export default function ViewerPage() {
     const params = useParams();
@@ -113,7 +115,10 @@ export default function ViewerPage() {
                 role="status"
                 className="grid min-h-dvh place-items-center p-6"
             >
-                <section className="w-full max-w-md rounded-3xl border border-edge p-8 text-center shadow-lg">
+                <section className="w-full max-w-md rounded-3xl border border-edge p-8 text-center shadow-lg gap-y-5 flex flex-col">
+                    <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-green-500/10 text-green-500">
+                        <CheckIcon />
+                    </div>
                     <h1 className="mb-2 text-2xl font-medium text-heading">
                         Artifact deleted
                     </h1>
@@ -121,6 +126,11 @@ export default function ViewerPage() {
                         The artifact was permanently deleted. You'll be
                         redirected home shortly.
                     </p>
+
+                    <ProgressBarWithTimeout
+                        timeout={3000}
+                        direction="backward"
+                    />
                 </section>
             </main>
         );
@@ -129,14 +139,21 @@ export default function ViewerPage() {
     if (loadError !== null) {
         return (
             <main className="grid min-h-dvh place-items-center p-6">
-                <section role="alert" className="max-w-md text-center">
-                    <h1 className="mb-2 text-2xl font-medium text-heading">
+                <section
+                    role="alert"
+                    className="max-w-md text-center flex flex-col gap-y-4"
+                >
+                    <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-red-500/10 text-red-500">
+                        <ArchiveIcon />
+                    </div>
+
+                    <h1 className="text-2xl font-medium text-heading">
                         Artifact unavailable
                     </h1>
-                    <p className="mb-6 text-body">{loadError}</p>
+                    <p className="text-body">{loadError}</p>
                     <Button
                         variant="primary"
-                        size="lg"
+                        size="sm"
                         onClick={() => void navigate("/")}
                     >
                         Go home

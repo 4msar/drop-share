@@ -7,8 +7,8 @@
 
 A personal artifact-sharing service on Cloudflare Workers + R2. Drop a file, a
 ZIP, or a folder in the browser (or via the `drop-share` CLI) and get back a
-public URL — re-uploading the same file or folder later updates it in place
-instead of creating a new artifact.
+public URL — re-uploading in the same directory later updates that artifact
+in place instead of creating a new one.
 
 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/4msar/drop-share)
 

@@ -33,25 +33,31 @@ This gives you a `drop-share` binary directly on your PATH.
 ## Usage
 
 ```
-drop-share upload <path> [--server <url>] [--extract] [--name <name>] [--new]
+drop-share upload <path> [<path> ...] [--server <url>] [--extract] [--name <name>] [--new]
 drop-share update <path> [--server <url>] [--extract] [--id <id>]
 ```
 
-| Argument / option    | Description |
-|-----------------------|-------------|
-| `<path>`              | File or folder to upload. Required. |
-| `--server <url>`      | The drop-share server to upload to. Can be set via `ARTIFACT_SERVER` instead. Defaults to `https://artifacts.msar.dev` if neither is given. |
-| `--extract`           | Only applies to a `.zip` file: extract it server-side into a browsable artifact instead of uploading it unchanged. |
-| `--name <name>`       | Override the display/stored filename for a single-file upload. |
-| `--new` (`upload` only) | Force publishing a brand-new artifact even if this path was published before. |
-| `--id <id>` (`update` only) | Update a specific artifact id directly, instead of looking up the one saved for this path. |
+| Argument / option           | Description                                                                                                                                 |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `<path>`                    | File or folder to upload. Required.                                                                                                         |
+| `--server <url>`            | The drop-share server to upload to. Can be set via `ARTIFACT_SERVER` instead. Defaults to `https://artifacts.msar.dev` if neither is given. |
+| `--extract`                 | Only applies to a `.zip` file: extract it server-side into a browsable artifact instead of uploading it unchanged.                          |
+| `--name <name>`             | Override the display/stored filename for a single-file upload.                                                                              |
+| `--new` (`upload` only)     | Force publishing a brand-new artifact even if this directory was published before.                                                          |
+| `--id <id>` (`update` only) | Update a specific artifact id directly, instead of looking up the one saved for this path.                                                  |
 
-Running `drop-share upload <path>` again on a path you've published before
-**updates that same artifact** (adding new files, overwriting changed ones,
-leaving everything else untouched) instead of creating a new one —
-drop-share remembers what you published, in `~/.drop-share/state.json`. Use
-`drop-share update <path>` to be explicit about updating, or `--new` to
-force a fresh artifact.
+Passing several paths to `upload` bundles them into a single artifact. Each
+path must be a file, not a directory. Since paths are plain positional
+arguments, your shell's normal filename tab-completion works for each one. If
+two files share a basename, their parent directory name is prefixed to keep
+them distinct (for example, `a-logo.png` and `b-logo.png`).
+
+Running `drop-share upload <path>` again in a directory you've published
+before **updates that same artifact** (adding new files, overwriting changed
+ones, leaving everything else untouched) instead of creating a new one —
+drop-share remembers the directory, in `~/.drop-share/state.json`. Use
+`drop-share update <path>` to be explicit about updating, or `--new` to force
+a fresh artifact.
 
 `ARTIFACT_SERVER` can be set in your shell profile so you don't have to pass
 `--server` on every call:
@@ -68,6 +74,24 @@ drop-share upload ./release.zip
 > service — point `--server` at your own drop-share deployment for anything
 > beyond quick testing.
 
+## Publishing and local development
+
+To publish a new CLI version, push a tag matching `cli-v*` (for example,
+`git tag cli-v0.2.0 && git push --tags`), or run the **Publish CLI** workflow
+manually from the Actions tab with a version input. The workflow syncs
+`cli/package.json`'s version to the tag, builds it, and runs `npm publish`.
+Publishing requires an `NPM_TOKEN` repository secret with publish rights to
+the `drop-and-share` package.
+
+To build and run the CLI locally without publishing:
+
+```bash
+cd cli
+npm install
+npm run build
+node dist/index.js upload ../README.md --server http://localhost:5173
+```
+
 ## Examples
 
 ```bash
@@ -82,6 +106,9 @@ drop-share upload ./release.zip --extract --server https://your-domain
 
 # A whole folder - relative paths inside it are preserved
 drop-share upload ./my-project/ --server https://your-domain
+
+# Several files in one artifact
+drop-share upload ./a.png ./b.png ./notes.md --server https://your-domain
 ```
 
 On success it prints the artifact's URL:
@@ -107,9 +134,10 @@ the one that actually matters and can't be bypassed by skipping the CLI.
 - **Folders**: enumerated recursively; relative paths are preserved and
   sent as-is (never the local absolute filesystem path). Symlinks are
   skipped with a warning rather than followed.
-- **Re-uploading the same path**: updates the artifact created by the
-  previous upload of that path (see `drop-share update` above) instead of
-  creating a new one, unless you pass `--new`.
+- **Re-uploading in the same directory**: updates the artifact created by the
+  previous upload in that directory (see `drop-share update` above) instead
+  of creating a new one, unless you pass `--new`. Bundled files use their
+  common parent directory.
 - **No authentication**: this CLI talks to a drop-share server that has no
   auth by design (see the [main README](https://github.com/4msar/drop-share#security-model-read-this-before-deploying-publicly)).
   Anyone who can reach the server can upload; point `--server` at a server

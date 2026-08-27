@@ -4,7 +4,13 @@ import { readFileSync, readdirSync, statSync } from "node:fs";
 import { type Args, parseArgs } from "./args.js";
 import { disambiguateNames } from "./names.js";
 import { NoSavedArtifactError, type UploadPlan, planUpload } from "./plan.js";
-import { defaultStatePath, getEntry, removeEntry, setEntry } from "./state.js";
+import {
+    baseDirectory,
+    defaultStatePath,
+    getEntry,
+    removeEntry,
+    setEntry,
+} from "./state.js";
 
 const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024;
 const MAX_ARTIFACT_SIZE_BYTES = 10 * 1024 * 1024;
@@ -85,27 +91,27 @@ function validateFileSize(size: number, label: string): void {
 
 /** Validates and prepares a set of loose files (not a directory) for a single bundled upload. */
 function buildMultiFileEntries(targetPaths: string[]): DirectoryEntry[] {
-  const sizes = targetPaths.map((path) => {
-    const stats = statSync(path, { throwIfNoEntry: false });
-    if (!stats) {
-      console.error(`No such file: ${path}`);
-      process.exit(1);
-    }
-    if (stats.isDirectory()) {
-      console.error(
-        `"${path}" is a directory. Pass a single directory path, or a list of individual files.`,
-      );
-      process.exit(1);
-    }
-    return stats.size;
-  });
+    const sizes = targetPaths.map((path) => {
+        const stats = statSync(path, { throwIfNoEntry: false });
+        if (!stats) {
+            console.error(`No such file: ${path}`);
+            process.exit(1);
+        }
+        if (stats.isDirectory()) {
+            console.error(
+                `"${path}" is a directory. Pass a single directory path, or a list of individual files.`,
+            );
+            process.exit(1);
+        }
+        return stats.size;
+    });
 
-  const relativePaths = disambiguateNames(targetPaths);
-  return targetPaths.map((absolutePath, i) => ({
-    relativePath: relativePaths[i],
-    absolutePath,
-    size: sizes[i],
-  }));
+    const relativePaths = disambiguateNames(targetPaths);
+    return targetPaths.map((absolutePath, i) => ({
+        relativePath: relativePaths[i],
+        absolutePath,
+        size: sizes[i],
+    }));
 }
 
 function validateDirectorySizes(entries: DirectoryEntry[]): number {
@@ -264,12 +270,18 @@ function resolvePlan(
 }
 
 /** Deterministic state-file key for a set of target paths, independent of the order they were given in. */
-function stateKey(targetPaths: string[]): string {
-    return [...targetPaths].sort().join("\n");
+function stateDirectory(targetPaths: string[]): string {
+    const directoryTargets = new Set<string>();
+    for (const targetPath of targetPaths) {
+        if (statSync(targetPath, { throwIfNoEntry: false })?.isDirectory()) {
+            directoryTargets.add(targetPath);
+        }
+    }
+    return baseDirectory(targetPaths, directoryTargets);
 }
 
 function saveResult(statePath: string, args: Args, result: UploadResult): void {
-    setEntry(statePath, args.server, stateKey(args.targetPaths), {
+    setEntry(statePath, args.server, stateDirectory(args.targetPaths), {
         id: result.id,
         url: result.url,
         updatedAt: new Date().toISOString(),
@@ -279,7 +291,11 @@ function saveResult(statePath: string, args: Args, result: UploadResult): void {
 async function main(): Promise<void> {
     const args = parseArgs(process.argv.slice(2));
     const statePath = defaultStatePath();
-    const existing = getEntry(statePath, args.server, stateKey(args.targetPaths));
+    const existing = getEntry(
+        statePath,
+        args.server,
+        stateDirectory(args.targetPaths),
+    );
     const plan = resolvePlan(args, existing);
 
     const attemptId = plan.action === "update" ? plan.id : undefined;
@@ -306,7 +322,11 @@ async function main(): Promise<void> {
         }
 
         if (existing?.id === plan.id) {
-            removeEntry(statePath, args.server, stateKey(args.targetPaths));
+            removeEntry(
+                statePath,
+                args.server,
+                stateDirectory(args.targetPaths),
+            );
         }
         if (args.command === "update") {
             console.error(
