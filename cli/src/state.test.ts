@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -33,31 +33,20 @@ describe("state", () => {
         );
     });
 
-    it("falls back to the newest legacy file entry in the same directory", () => {
+    it("writes the full base directory into the state key", () => {
         const aiDirectory = join(process.cwd(), ".ai");
-        writeFileSync(
-            statePath,
-            JSON.stringify({
-                "https://example.com|.ai/old.md": {
-                    id: "old-id",
-                    url: "/a/old-id/",
-                    updatedAt: "2026-08-24T00:00:00.000Z",
-                },
-                "https://example.com|.ai/new.md": {
-                    id: "new-id",
-                    url: "/a/new-id/",
-                    updatedAt: "2026-08-24T00:00:01.000Z",
-                },
-            }),
-        );
+        setEntry(statePath, "https://example.com", aiDirectory, {
+            id: "id-a",
+            url: "/a/id-a/",
+            updatedAt: "2026-08-24T00:00:00.000Z",
+        });
 
-        expect(getEntry(statePath, "https://example.com", aiDirectory)).toEqual(
-            {
-                id: "new-id",
-                url: "/a/new-id/",
-                updatedAt: "2026-08-24T00:00:01.000Z",
-            },
-        );
+        const state = JSON.parse(readFileSync(statePath, "utf-8")) as Record<
+            string,
+            unknown
+        >;
+        expect(state[`https://example.com|${aiDirectory}`]).toBeDefined();
+        expect(state["https://example.com|.ai"]).toBeUndefined();
     });
 
     it("returns undefined for a path with no saved entry", () => {
@@ -107,29 +96,6 @@ describe("state", () => {
 
         expect(
             getEntry(statePath, "https://example.com", "/some/path"),
-        ).toBeUndefined();
-    });
-
-    it("removes legacy entries under the same directory", () => {
-        writeFileSync(
-            statePath,
-            JSON.stringify({
-                "https://example.com|.ai/old.md": { id: "old-id" },
-            }),
-        );
-
-        removeEntry(
-            statePath,
-            "https://example.com",
-            join(process.cwd(), ".ai"),
-        );
-
-        expect(
-            getEntry(
-                statePath,
-                "https://example.com",
-                join(process.cwd(), ".ai"),
-            ),
         ).toBeUndefined();
     });
 

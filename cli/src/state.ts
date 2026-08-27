@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { basename, dirname, isAbsolute, join, relative } from "node:path";
+import { dirname, isAbsolute, join, relative } from "node:path";
 
 export interface StateEntry {
     id: string;
@@ -15,9 +15,7 @@ export function defaultStatePath(): string {
 }
 
 function stateKey(server: string, baseDirectory: string): string {
-    const displayDirectory =
-        relative(process.cwd(), baseDirectory) || basename(baseDirectory);
-    return `${server}|${displayDirectory}`;
+    return `${server}|${baseDirectory}`;
 }
 
 export function baseDirectory(
@@ -72,15 +70,7 @@ export function getEntry(
     const state = loadState(statePath);
     const key = stateKey(server, baseDirectoryPath);
     const directEntry = state[key];
-    if (directEntry) return directEntry;
-
-    const directoryPrefix = `${key}/`;
-    return Object.entries(state)
-        .filter(([entryKey]) => entryKey.startsWith(directoryPrefix))
-        .map(([, entry]) => entry)
-        .sort((first, second) =>
-            second.updatedAt.localeCompare(first.updatedAt),
-        )[0];
+    return directEntry;
 }
 
 export function setEntry(
@@ -102,8 +92,5 @@ export function removeEntry(
     const state = loadState(statePath);
     const key = stateKey(server, baseDirectoryPath);
     delete state[key];
-    for (const entryKey of Object.keys(state)) {
-        if (entryKey.startsWith(`${key}/`)) delete state[entryKey];
-    }
     saveState(statePath, state);
 }
