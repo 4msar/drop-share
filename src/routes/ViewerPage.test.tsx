@@ -302,12 +302,20 @@ describe("artifact actions", () => {
     it("offers a delete control at the root only", async () => {
         stubListing({ files: [file("a.txt")] });
         await renderViewer();
-        expect(screen.getByRole("button", { name: "Delete" })).toBeTruthy();
+        screen.getByRole("button", { name: "More actions" }).click();
+        expect(
+            await screen.findByRole("button", { name: "Delete" }),
+        ).toBeTruthy();
     });
 
     it("hides the delete control inside a subfolder, since it deletes the whole artifact", async () => {
         stubListing({ files: [file("style.css")], path: "css/" });
         await renderViewer("css/");
+        screen.getByRole("button", { name: "More actions" }).click();
+        // Wait for the menu to actually open (via a control that's always
+        // present) before asserting Delete is absent - otherwise this would
+        // pass vacuously whether or not the menu ever opened.
+        await screen.findByRole("button", { name: "Share" });
         expect(screen.queryByRole("button", { name: "Delete" })).toBeNull();
     });
 
@@ -315,7 +323,8 @@ describe("artifact actions", () => {
         const fetchMock = stubListing({ files: [file("a.txt")] });
         await renderViewer();
 
-        screen.getByRole("button", { name: "Delete" }).click();
+        screen.getByRole("button", { name: "More actions" }).click();
+        (await screen.findByRole("button", { name: "Delete" })).click();
 
         await waitFor(() => {
             expect(globalThis.confirm).toHaveBeenCalled();
@@ -338,7 +347,8 @@ describe("artifact actions", () => {
         const fetchMock = stubListing({ files: [file("a.txt")] });
         await renderViewer();
 
-        screen.getByRole("button", { name: "Delete" }).click();
+        screen.getByRole("button", { name: "More actions" }).click();
+        (await screen.findByRole("button", { name: "Delete" })).click();
 
         await waitFor(() => expect(globalThis.confirm).toHaveBeenCalled());
         expect(

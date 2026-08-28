@@ -157,6 +157,7 @@ export function Header({
                 </Button>
                 <div className="relative">
                     <Button
+                        aria-label="More actions"
                         aria-expanded={actionsOpen}
                         onClick={() => setActionsOpen((open) => !open)}
                         className="size-7 text-base p-0"
