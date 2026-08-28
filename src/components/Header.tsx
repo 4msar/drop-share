@@ -6,6 +6,7 @@ import { deleteArtifact, lockArtifact, uploadIntoArtifact } from "../lib/artifac
 import { removeRecentItem } from "../lib/recent";
 import type { RecentItem } from "../lib/recent";
 import { toggleTheme } from "../lib/theme";
+import { removeToken, saveToken } from "../lib/tokens";
 import {
     ActionIcon,
     LockIcon,
@@ -84,6 +85,7 @@ export function Header({
         try {
             await deleteArtifact(currentId, token);
             removeRecentItem(currentId);
+            removeToken(currentId);
             onDeleted();
             window.setTimeout(
                 () => void navigate("/"),
@@ -129,6 +131,7 @@ export function Header({
         onError(null);
         try {
             const newToken = await lockArtifact(currentId);
+            saveToken(currentId, newToken);
             setLockToken(newToken);
             onLocked(newToken);
         } catch (error) {

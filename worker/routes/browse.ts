@@ -73,6 +73,7 @@ export async function handleArtifactJson(
         id,
         url: `/a/${id}/${subPath}`,
         path: subPath,
+        label: authResult.metadata?.label,
         files: listing.files.map((file) => {
             const contentType = file.contentType ?? getContentType(file.name);
             return {
@@ -135,7 +136,10 @@ async function serveViewerShell(
     // R2 list, so an artifact/subfolder containing only hidden files (e.g.
     // just `.artifact.json`) never produces a shell that the visible listing
     // can then never fill in.
-    const listing = await listArtifactChildren(env.ARTIFACTS_BUCKET, `${id}/${relSubPath}`);
+    const listing = await listArtifactChildren(
+        env.ARTIFACTS_BUCKET,
+        `${id}/${relSubPath}`,
+    );
     if (listing.files.length === 0 && listing.directories.length === 0) {
         return jsonError(404, "Artifact not found");
     }
@@ -175,7 +179,10 @@ async function serveFile(
     if (ifNoneMatch !== null && ifNoneMatch === object.httpEtag) {
         return new Response(null, {
             status: 304,
-            headers: { "Cache-Control": FILE_CACHE_CONTROL, ETag: object.httpEtag },
+            headers: {
+                "Cache-Control": FILE_CACHE_CONTROL,
+                ETag: object.httpEtag,
+            },
         });
     }
 
@@ -187,7 +194,11 @@ async function serveFile(
         contentType === MARKDOWN_CONTENT_TYPE &&
         new URL(request.url).searchParams.get("render") === "html"
     ) {
-        return renderMarkdownFile(filename, await object.text(), request.method);
+        return renderMarkdownFile(
+            filename,
+            await object.text(),
+            request.method,
+        );
     }
 
     const dispositionType = isInlineSafe(contentType) ? "inline" : "attachment";

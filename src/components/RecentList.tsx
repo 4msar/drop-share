@@ -1,6 +1,8 @@
 import { Link } from "react-router";
+import { withToken } from "../lib/artifact";
 import { formatRelativeTime } from "../lib/format";
 import type { RecentItem } from "../lib/recent";
+import { getStoredToken } from "../lib/tokens";
 
 interface RecentListProps {
     items: RecentItem[];
@@ -39,7 +41,10 @@ export function RecentList({
                             </span>
                         ) : (
                             <Link
-                                to={`/a/${item.id}/`}
+                                to={withToken(
+                                    `/a/${item.id}/`,
+                                    getStoredToken(item.id),
+                                )}
                                 onClick={() => onSelect?.(item.id)}
                                 className="block rounded-lg transition-all px-3 py-2 text-left no-underline hover:bg-brand-soft"
                             >

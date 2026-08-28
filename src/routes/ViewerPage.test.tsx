@@ -3,6 +3,7 @@ import { MemoryRouter, Route, Routes, useLocation } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ArtifactFile } from "../lib/artifact";
 import { addRecentItem, getRecentItems } from "../lib/recent";
+import { getStoredToken, saveToken } from "../lib/tokens";
 import ViewerPage from "./ViewerPage";
 
 const ID = "01ARZ3NDEKTSV4RRFFQ69G5FAV";
@@ -31,13 +32,19 @@ interface Listing {
 const LOCK_URL_PATTERN = /^\/api\/artifact\/[^/?]+\/lock/;
 
 /**
- * A fetch stub that also models server-side auth state: once `/lock` is
- * called, subsequent listing responses report the artifact as locked, and
- * `canModify` reflects whether the request's `?token=` matches the token the
- * lock call generated - the same way the real Worker behaves.
+ * A fetch stub that also models server-side auth state: `initial.locked`/
+ * `initial.canModify` describe the artifact's state as of the first render
+ * (an already-protected artifact stays exactly as declared - it doesn't
+ * matter whether the URL happens to carry a token, since this mock has no
+ * way to know what "the current valid token" is until a real `/lock` call
+ * generates one). Once this test itself calls `/lock`, the mock switches to
+ * checking the request's `?token=` against the token that call generated -
+ * the same way the real Worker behaves.
  */
 function stubListing(initial: Listing, options: { lockToken?: string } = {}) {
     let locked = initial.locked ?? false;
+    const canModify = initial.canModify ?? true;
+    let requiresTokenMatch = false;
     const lockToken = options.lockToken ?? "generated-token";
 
     const fetchMock = vi.fn(async (...args: Parameters<typeof fetch>) => {
@@ -46,6 +53,7 @@ function stubListing(initial: Listing, options: { lockToken?: string } = {}) {
 
         if (LOCK_URL_PATTERN.test(url) && init?.method === "POST") {
             locked = true;
+            requiresTokenMatch = true;
             return new Response(
                 JSON.stringify({ success: true, id: ID, token: lockToken }),
                 { status: 200, headers: { "Content-Type": "application/json" } },
@@ -54,9 +62,9 @@ function stubListing(initial: Listing, options: { lockToken?: string } = {}) {
 
         if (url.startsWith("/api/artifact/")) {
             const suppliedToken = new URL(url, "http://localhost").searchParams.get("token");
-            const canModify = locked
+            const effectiveCanModify = requiresTokenMatch
                 ? suppliedToken === lockToken
-                : (initial.canModify ?? true);
+                : canModify;
             return new Response(
                 JSON.stringify({
                     success: true,
@@ -65,7 +73,7 @@ function stubListing(initial: Listing, options: { lockToken?: string } = {}) {
                     files: initial.files ?? [],
                     directories: initial.directories ?? [],
                     locked,
-                    canModify,
+                    canModify: effectiveCanModify,
                 }),
                 {
                     status: 200,
@@ -465,6 +473,32 @@ describe("protected artifacts", () => {
         );
     });
 
+    it("saves the generated token to localStorage after locking", async () => {
+        stubListing(
+            { files: [file("a.txt")], locked: false },
+            { lockToken: "one-time-token" },
+        );
+        await renderViewer();
+
+        screen.getByRole("button", { name: "More actions" }).click();
+        (await screen.findByRole("button", { name: "Lock" })).click();
+
+        await waitFor(() =>
+            expect(getStoredToken(ID)).toBe("one-time-token"),
+        );
+    });
+
+    it("removes the saved token when the artifact is deleted", async () => {
+        saveToken(ID, "stale-token");
+        stubListing({ files: [file("a.txt")], locked: true, canModify: true });
+        await renderViewer();
+
+        screen.getByRole("button", { name: "More actions" }).click();
+        (await screen.findByRole("button", { name: "Delete" })).click();
+
+        await waitFor(() => expect(getStoredToken(ID)).toBeNull());
+    });
+
     it("shows an error and does not lock when the confirmation is declined", async () => {
         vi.stubGlobal(
             "confirm",
@@ -619,6 +653,24 @@ describe("recent artifacts", () => {
             screen.getByRole("link", { name: /other-artifact/i }),
         );
         expect(link.getAttribute("href")).toBe("/a/other-artifact/");
+    });
+
+    it("auto-injects a saved token when switching to a recent artifact that was previously locked", async () => {
+        addRecentItem("other-artifact", Date.now() - 60_000);
+        saveToken("other-artifact", "other-token");
+        stubListing({ files: [file("a.txt")] });
+        await renderViewer();
+
+        await waitFor(() => expect(getRecentItems().length).toBe(2));
+
+        screen.getByRole("button", { name: /switch artifact/i }).click();
+
+        const link = await waitFor(() =>
+            screen.getByRole("link", { name: /other-artifact/i }),
+        );
+        expect(link.getAttribute("href")).toBe(
+            "/a/other-artifact/?token=other-token",
+        );
     });
 });
 
