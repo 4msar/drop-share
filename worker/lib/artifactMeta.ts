@@ -29,6 +29,9 @@ export const MALFORMED_AUTH_STATE: ArtifactAuthState = {
 
 const TOKEN_BYTE_LENGTH = 32;
 
+/** Longest label accepted through the label-update route (trimmed length). */
+export const MAX_LABEL_LENGTH = 200;
+
 /** Builds the reserved R2 key for an artifact's hidden metadata object. */
 export function metadataObjectKey(artifactId: string): string {
     return `${artifactId}/${ARTIFACT_METADATA_FILENAME}`;

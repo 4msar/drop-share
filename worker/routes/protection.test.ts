@@ -33,18 +33,37 @@ async function listing(id: string, token?: string) {
       success: boolean;
       locked?: boolean;
       canModify?: boolean;
+      label?: string;
       files: { name: string }[];
       directories: string[];
     },
   };
 }
 
-async function lock(id: string) {
-  const response = await exports.default.fetch(`${ORIGIN}/api/artifact/${id}/lock`, { method: "POST" });
+async function updateArtifact(
+  id: string,
+  body: Record<string, unknown>,
+  headers: Record<string, string> = {},
+) {
+  const response = await exports.default.fetch(`${ORIGIN}/api/artifact/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...headers },
+    body: JSON.stringify(body),
+  });
   return {
     status: response.status,
-    body: (await response.json()) as { success: boolean; token?: string; error?: string },
+    body: (await response.json()) as {
+      success: boolean;
+      token?: string;
+      label?: string;
+      locked?: boolean;
+      error?: string;
+    },
   };
+}
+
+async function lock(id: string) {
+  return updateArtifact(id, { lock: true });
 }
 
 describe("new artifacts get a hidden metadata marker", () => {
@@ -52,7 +71,7 @@ describe("new artifacts get a hidden metadata marker", () => {
     const { id } = await upload("file", [{ name: "a.txt", content: "a" }]);
     const response = await exports.default.fetch(`${ORIGIN}/a/${id}/.artifact.json`);
     expect(response.status).toBe(404); // never directly downloadable...
-    const probe = await exports.default.fetch(`${ORIGIN}/api/artifact/${id}/lock`, { method: "POST" });
+    const probe = await lock(id);
     expect(probe.status).toBe(200); // ...but it exists, so locking succeeds.
   });
 
@@ -202,6 +221,76 @@ describe("lock endpoint", () => {
   it("404s locking a syntactically invalid id, same as any other malformed artifact id", async () => {
     const response = await lock("not-a-ulid");
     expect(response.status).toBe(404);
+  });
+
+  it("400s a request with neither a label nor lock", async () => {
+    const { id } = await upload("file", [{ name: "a.txt", content: "a" }]);
+    const response = await updateArtifact(id, {});
+    expect(response.status).toBe(400);
+  });
+});
+
+describe("label updates", () => {
+  it("lets anyone relabel an unprotected artifact, and the new label is reflected in listings", async () => {
+    const { id } = await upload("file", [{ name: "a.txt", content: "a" }]);
+
+    const { status, body } = await updateArtifact(id, { label: "  My New Label  " });
+    expect(status).toBe(200);
+    expect(body.label).toBe("My New Label");
+
+    const { body: listed } = await listing(id);
+    expect(listed.label).toBe("My New Label");
+  });
+
+  it("rejects relabeling a protected artifact without the token", async () => {
+    const { id } = await upload("file", [{ name: "a.txt", content: "a" }]);
+    await lock(id);
+
+    const response = await updateArtifact(id, { label: "New Label" });
+    expect(response.status).toBe(403);
+  });
+
+  it("rejects relabeling a protected artifact with an incorrect token", async () => {
+    const { id } = await upload("file", [{ name: "a.txt", content: "a" }]);
+    await lock(id);
+
+    const response = await updateArtifact(id, { label: "New Label" }, { "X-Artifact-Token": "wrong" });
+    expect(response.status).toBe(403);
+  });
+
+  it("allows relabeling a protected artifact with the correct token", async () => {
+    const { id } = await upload("file", [{ name: "a.txt", content: "a" }]);
+    const { body: lockBody } = await lock(id);
+
+    const response = await updateArtifact(
+      id,
+      { label: "New Label" },
+      { "X-Artifact-Token": lockBody.token! },
+    );
+    expect(response.status).toBe(200);
+    expect(response.body.label).toBe("New Label");
+  });
+
+  it("rejects an empty or overlong label", async () => {
+    const { id } = await upload("file", [{ name: "a.txt", content: "a" }]);
+
+    expect((await updateArtifact(id, { label: "   " })).status).toBe(400);
+    expect((await updateArtifact(id, { label: "x".repeat(201) })).status).toBe(400);
+  });
+
+  it("404s relabeling an id that was never uploaded to", async () => {
+    const response = await updateArtifact("01ARZ3NDEKTSV4RRFFQ69G5FAV", { label: "New Label" });
+    expect(response.status).toBe(404);
+  });
+
+  it("locks and relabels in a single request", async () => {
+    const { id } = await upload("file", [{ name: "a.txt", content: "a" }]);
+
+    const { status, body } = await updateArtifact(id, { label: "New Label", lock: true });
+    expect(status).toBe(200);
+    expect(body.label).toBe("New Label");
+    expect(body.locked).toBe(true);
+    expect(body.token).toBeTruthy();
   });
 });
 

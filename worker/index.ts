@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import { jsonError } from "./lib/http.js";
 import { handleArtifactBrowse, handleArtifactDelete, handleArtifactJson } from "./routes/browse.js";
 import { handleHealth } from "./routes/health.js";
-import { handleArtifactLock } from "./routes/lock.js";
+import { handleArtifactUpdate } from "./routes/update.js";
 import { handleUpload } from "./routes/upload.js";
 
 const app = new Hono<{ Bindings: Env }>();
@@ -23,10 +23,11 @@ app.get("/api/artifact/:id", (c) =>
 app.delete("/api/artifact/:id", (c) =>
   handleArtifactDelete(c.req.param("id"), c.env, c.req.header("X-Artifact-Token") ?? null),
 );
+app.patch("/api/artifact/:id", async (c) => {
+  const body = await c.req.json().catch(() => null);
+  return handleArtifactUpdate(c.req.param("id"), c.env, c.req.header("X-Artifact-Token") ?? null, body);
+});
 app.all("/api/artifact/:id", methodNotAllowed);
-
-app.post("/api/artifact/:id/lock", (c) => handleArtifactLock(c.req.param("id"), c.env));
-app.all("/api/artifact/:id/lock", methodNotAllowed);
 
 // `/a/<id>` with no trailing slash resolves the same way `/a/<id>/` does, so
 // both shapes are registered.

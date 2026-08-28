@@ -30,42 +30,71 @@ interface Listing {
     label?: string;
 }
 
-const LOCK_URL_PATTERN = /^\/api\/artifact\/[^/?]+\/lock/;
+const UPDATE_URL = `/api/artifact/${ID}`;
 
 /**
  * A fetch stub that also models server-side auth state: `initial.locked`/
  * `initial.canModify` describe the artifact's state as of the first render
  * (an already-protected artifact stays exactly as declared - it doesn't
  * matter whether the URL happens to carry a token, since this mock has no
- * way to know what "the current valid token" is until a real `/lock` call
- * generates one). Once this test itself calls `/lock`, the mock switches to
- * checking the request's `?token=` against the token that call generated -
- * the same way the real Worker behaves.
+ * way to know what "the current valid token" is until a real lock call
+ * generates one). Once this test itself PATCHes `lock: true`, the mock
+ * switches to checking the request's token against the token that call
+ * generated - the same way the real Worker behaves. Label edits go through
+ * the same PATCH endpoint and are gated by the same auth.
  */
 function stubListing(initial: Listing, options: { lockToken?: string } = {}) {
     let locked = initial.locked ?? false;
-    const canModify = initial.canModify ?? true;
+    const baseCanModify = initial.canModify ?? true;
+    let label = initial.label;
     let requiresTokenMatch = false;
     const lockToken = options.lockToken ?? "generated-token";
+
+    const canModifyWith = (suppliedToken: string | null) =>
+        requiresTokenMatch ? suppliedToken === lockToken : baseCanModify;
 
     const fetchMock = vi.fn(async (...args: Parameters<typeof fetch>) => {
         const url = String(args[0]);
         const init = args[1] as RequestInit | undefined;
 
-        if (LOCK_URL_PATTERN.test(url) && init?.method === "POST") {
-            locked = true;
-            requiresTokenMatch = true;
+        if (url === UPDATE_URL && init?.method === "PATCH") {
+            const suppliedToken =
+                (init.headers as Record<string, string> | undefined)?.["X-Artifact-Token"] ?? null;
+            const body = JSON.parse(String(init.body)) as { label?: string; lock?: boolean };
+
+            if (body.lock === true) {
+                if (locked) {
+                    return new Response(
+                        JSON.stringify({ success: false, error: "Artifact is already protected" }),
+                        { status: 409, headers: { "Content-Type": "application/json" } },
+                    );
+                }
+                locked = true;
+                requiresTokenMatch = true;
+            } else if (locked && !canModifyWith(suppliedToken)) {
+                return new Response(JSON.stringify({ success: false, error: "Forbidden" }), {
+                    status: 403,
+                    headers: { "Content-Type": "application/json" },
+                });
+            }
+
+            if (typeof body.label === "string") label = body.label;
+
             return new Response(
-                JSON.stringify({ success: true, id: ID, token: lockToken }),
+                JSON.stringify({
+                    success: true,
+                    id: ID,
+                    label,
+                    locked,
+                    canModify: true,
+                    ...(body.lock === true ? { token: lockToken } : {}),
+                }),
                 { status: 200, headers: { "Content-Type": "application/json" } },
             );
         }
 
         if (url.startsWith("/api/artifact/")) {
             const suppliedToken = new URL(url, "http://localhost").searchParams.get("token");
-            const effectiveCanModify = requiresTokenMatch
-                ? suppliedToken === lockToken
-                : canModify;
             return new Response(
                 JSON.stringify({
                     success: true,
@@ -74,8 +103,8 @@ function stubListing(initial: Listing, options: { lockToken?: string } = {}) {
                     files: initial.files ?? [],
                     directories: initial.directories ?? [],
                     locked,
-                    canModify: effectiveCanModify,
-                    label: initial.label,
+                    canModify: canModifyWith(suppliedToken),
+                    label,
                 }),
                 {
                     status: 200,
@@ -453,8 +482,9 @@ describe("protected artifacts", () => {
             expect(
                 fetchMock.mock.calls.some(
                     (call) =>
-                        String(call[0]) === `/api/artifact/${ID}/lock` &&
-                        call[1]?.method === "POST",
+                        String(call[0]) === `/api/artifact/${ID}` &&
+                        call[1]?.method === "PATCH" &&
+                        JSON.parse(String(call[1]?.body)).lock === true,
                 ),
             ).toBe(true);
         });
@@ -514,9 +544,78 @@ describe("protected artifacts", () => {
 
         await waitFor(() => expect(globalThis.confirm).toHaveBeenCalled());
         expect(
-            fetchMock.mock.calls.some((call) =>
-                LOCK_URL_PATTERN.test(String(call[0])),
+            fetchMock.mock.calls.some(
+                (call) => call[1]?.method === "PATCH" && call[0] === UPDATE_URL,
             ),
+        ).toBe(false);
+    });
+});
+
+describe("rename", () => {
+    it("offers a Rename action at the root only, for a modifiable artifact", async () => {
+        stubListing({ files: [file("a.txt")], label: "Original" });
+        await renderViewer();
+
+        screen.getByRole("button", { name: "More actions" }).click();
+        expect(await screen.findByRole("button", { name: "Rename" })).toBeTruthy();
+    });
+
+    it("hides Rename inside a subfolder", async () => {
+        stubListing({ files: [file("style.css")], path: "css/", label: "Original" });
+        await renderViewer("css/");
+
+        screen.getByRole("button", { name: "More actions" }).click();
+        await screen.findByRole("button", { name: "Share" });
+        expect(screen.queryByRole("button", { name: "Rename" })).toBeNull();
+    });
+
+    it("hides Rename when the artifact can't be modified", async () => {
+        stubListing({ files: [file("a.txt")], locked: true, canModify: false, label: "Original" });
+        await renderViewer();
+
+        screen.getByRole("button", { name: "More actions" }).click();
+        await screen.findByRole("button", { name: "Share" });
+        expect(screen.queryByRole("button", { name: "Rename" })).toBeNull();
+    });
+
+    it("renames via the prompt and reloads the listing with the new label", async () => {
+        vi.stubGlobal(
+            "prompt",
+            vi.fn(() => "New Label"),
+        );
+        const fetchMock = stubListing({ files: [file("a.txt")], label: "Original" });
+        await renderViewer();
+
+        screen.getByRole("button", { name: "More actions" }).click();
+        (await screen.findByRole("button", { name: "Rename" })).click();
+
+        await waitFor(() => {
+            expect(
+                fetchMock.mock.calls.some(
+                    (call) =>
+                        call[0] === UPDATE_URL &&
+                        call[1]?.method === "PATCH" &&
+                        JSON.parse(String(call[1]?.body)).label === "New Label",
+                ),
+            ).toBe(true);
+        });
+        expect(await screen.findAllByText(/New Label/)).not.toHaveLength(0);
+    });
+
+    it("does not rename when the prompt is cancelled", async () => {
+        vi.stubGlobal(
+            "prompt",
+            vi.fn(() => null),
+        );
+        const fetchMock = stubListing({ files: [file("a.txt")], label: "Original" });
+        await renderViewer();
+
+        screen.getByRole("button", { name: "More actions" }).click();
+        (await screen.findByRole("button", { name: "Rename" })).click();
+
+        await waitFor(() => expect(globalThis.prompt).toHaveBeenCalled());
+        expect(
+            fetchMock.mock.calls.some((call) => call[1]?.method === "PATCH"),
         ).toBe(false);
     });
 });

@@ -219,6 +219,7 @@ export default function ViewerPage() {
                 subPath={subPath}
                 locked={listing.locked}
                 canModify={listing.canModify}
+                label={listing.label}
                 token={token}
                 onDeleted={() => setDeleted(true)}
                 onReload={() => setReloadToken((count) => count + 1)}

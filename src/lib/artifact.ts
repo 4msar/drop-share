@@ -117,6 +117,25 @@ export async function uploadIntoArtifact(
   }
 }
 
+async function updateArtifact(
+  id: string,
+  body: Record<string, unknown>,
+  token: string | null,
+): Promise<{ label?: string; token?: string }> {
+  const response = await fetch(`/api/artifact/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...tokenHeaders(token) },
+    body: JSON.stringify(body),
+  });
+  const parsed = (await response.json().catch(() => null)) as
+    | { success?: boolean; label?: string; token?: string; error?: string }
+    | null;
+  if (!response.ok || !parsed?.success) {
+    throw new Error(parsed?.error || "Failed to update artifact.");
+  }
+  return parsed;
+}
+
 /**
  * Protects an unprotected artifact, generating its token server-side. The
  * token is returned exactly once - the caller is responsible for showing it
@@ -124,16 +143,22 @@ export async function uploadIntoArtifact(
  * never be retrieved again afterward.
  */
 export async function lockArtifact(id: string): Promise<string> {
-  const response = await fetch(`/api/artifact/${encodeURIComponent(id)}/lock`, {
-    method: "POST",
-  });
-  const body = (await response.json().catch(() => null)) as
-    | { success?: boolean; token?: string; error?: string }
-    | null;
-  if (!response.ok || !body?.success || !body.token) {
-    throw new Error(body?.error || "Failed to lock artifact.");
-  }
-  return body.token;
+  const { token } = await updateArtifact(id, { lock: true }, null);
+  if (!token) throw new Error("Failed to lock artifact.");
+  return token;
+}
+
+/**
+ * Renames an artifact. Allowed by anyone while unprotected; once locked, the
+ * caller must supply the artifact's token.
+ */
+export async function updateArtifactLabel(
+  id: string,
+  label: string,
+  token: string | null,
+): Promise<string> {
+  const { label: updatedLabel } = await updateArtifact(id, { label }, token);
+  return updatedLabel ?? label;
 }
 
 /**

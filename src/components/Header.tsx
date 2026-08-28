@@ -2,13 +2,19 @@ import { useCallback, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router";
 import { Button } from "./Button";
 import { RecentSwitcher } from "./RecentSwitcher";
-import { deleteArtifact, lockArtifact, uploadIntoArtifact } from "../lib/artifact";
+import {
+    deleteArtifact,
+    lockArtifact,
+    updateArtifactLabel,
+    uploadIntoArtifact,
+} from "../lib/artifact";
 import { removeRecentItem } from "../lib/recent";
 import type { RecentItem } from "../lib/recent";
 import { toggleTheme } from "../lib/theme";
 import { removeToken, saveToken } from "../lib/tokens";
 import {
     ActionIcon,
+    EditIcon,
     LockIcon,
     ShareIcon,
     ThemeIcon,
@@ -28,6 +34,7 @@ interface HeaderProps {
     isRoot: boolean;
     locked: boolean;
     canModify: boolean;
+    label?: string;
     token: string | null;
     onDeleted: () => void;
     onReload: () => void;
@@ -44,6 +51,7 @@ export function Header({
     isRoot,
     locked,
     canModify,
+    label,
     token,
     onDeleted,
     onReload,
@@ -54,6 +62,7 @@ export function Header({
     const [actionsOpen, setActionsOpen] = useState(false);
     const [uploading, setUploading] = useState(false);
     const [locking, setLocking] = useState(false);
+    const [renaming, setRenaming] = useState(false);
     const [lockToken, setLockToken] = useState<string | null>(null);
     const [lockCopyLabel, setLockCopyLabel] = useState("Copy");
     const [shareLabel, setShareLabel] = useState("Share");
@@ -143,6 +152,27 @@ export function Header({
         }
     }, [currentId, onError, onLocked]);
 
+    const onRename = useCallback(async () => {
+        const next = window.prompt("Rename this artifact", label ?? "");
+        if (next === null) return;
+        const trimmed = next.trim();
+        if (trimmed === "" || trimmed === label) return;
+        setRenaming(true);
+        onError(null);
+        try {
+            await updateArtifactLabel(currentId, trimmed, token);
+            onReload();
+        } catch (error) {
+            onError(
+                error instanceof Error
+                    ? error.message
+                    : "Failed to rename artifact.",
+            );
+        } finally {
+            setRenaming(false);
+        }
+    }, [currentId, label, onError, onReload, token]);
+
     const onCopyLockToken = useCallback(async () => {
         if (!lockToken) return;
         try {
@@ -230,6 +260,20 @@ export function Header({
                                     <ShareIcon className="size-3.5 shrink-0" />
                                     {shareLabel}
                                 </button>
+                                {isRoot && canModify && (
+                                    <button
+                                        type="button"
+                                        disabled={renaming}
+                                        onClick={() => {
+                                            delayedAction();
+                                            void onRename();
+                                        }}
+                                        className="flex h-8 w-full items-center gap-2 rounded-md px-2.5 text-left text-xs text-heading hover:bg-brand-soft disabled:opacity-60"
+                                    >
+                                        <EditIcon className="size-3.5 shrink-0" />
+                                        {renaming ? "Renaming…" : "Rename"}
+                                    </button>
+                                )}
                                 {canModify && (
                                     <button
                                         type="button"
