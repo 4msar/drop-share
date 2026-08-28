@@ -20,6 +20,8 @@ export interface ArtifactListing {
   locked: boolean;
   /** Whether the current request (i.e. the current URL's token) is authorized to mutate the artifact. */
   canModify: boolean;
+  /** Human-readable label derived at creation time (e.g. the uploaded file/folder name). Absent for legacy artifacts with no metadata. */
+  label?: string;
 }
 
 interface ListingResponse extends ArtifactListing {
@@ -69,6 +71,7 @@ export async function fetchArtifactListing(
     directories: body.directories ?? [],
     locked: body.locked ?? false,
     canModify: body.canModify ?? true,
+    label: body.label || undefined,
   };
 }
 

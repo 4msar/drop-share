@@ -22,8 +22,11 @@ export function RecentList({
                 const isCurrent = item.id === currentId;
                 const label = (
                     <>
-                        <span className="block truncate text-sm font-medium text-heading">
-                            {item.id}
+                        <span
+                            className="block truncate text-sm font-medium text-heading"
+                            title={item.label ? item.id : undefined}
+                        >
+                            {item.label || item.id}
                         </span>
                         <span className="block text-xs text-body">
                             {formatRelativeTime(item.visitedAt)}

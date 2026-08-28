@@ -80,7 +80,7 @@ export default function ViewerPage() {
                 if (cancelled) return;
                 setListing(next);
                 setLoadError(null);
-                setRecentItems(addRecentItem(id));
+                setRecentItems(addRecentItem(id, undefined, next.label));
             },
             (error: unknown) => {
                 if (cancelled) return;
@@ -199,7 +199,8 @@ export default function ViewerPage() {
     const directories = listing.directories.slice().sort();
     const subPath = listing.path;
     const isRoot = subPath === "";
-    const title = isRoot ? id : `${id} / ${subPath}`;
+    const label = listing.label || id;
+    const title = isRoot ? label : `${label} / ${subPath}`;
     const meta = [
         pluralize(files.length, "file"),
         directories.length > 0 ? pluralize(directories.length, "folder") : null,

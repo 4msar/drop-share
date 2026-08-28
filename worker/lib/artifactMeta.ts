@@ -1,36 +1,45 @@
 export const ARTIFACT_METADATA_FILENAME = ".artifact.json";
 
 export interface ArtifactMetadata {
-  label: string;
-  createdAt: string;
-  token?: string;
-  [key: string]: unknown;
+    label: string;
+    createdAt: string;
+    token?: string;
+    [key: string]: unknown;
 }
 
 export interface ArtifactAuthState {
-  locked: boolean;
-  canModify: boolean;
+    locked: boolean;
+    canModify: boolean;
 }
 
 export interface ArtifactAuthResult {
-  auth: ArtifactAuthState;
-  metadataObject: R2ObjectBody | null;
-  metadata: ArtifactMetadata | null;
+    auth: ArtifactAuthState;
+    metadataObject: R2ObjectBody | null;
+    metadata: ArtifactMetadata | null;
 }
 
-export const UNPROTECTED_AUTH_STATE: ArtifactAuthState = { locked: false, canModify: true };
-export const MALFORMED_AUTH_STATE: ArtifactAuthState = { locked: true, canModify: false };
+export const UNPROTECTED_AUTH_STATE: ArtifactAuthState = {
+    locked: false,
+    canModify: true,
+};
+export const MALFORMED_AUTH_STATE: ArtifactAuthState = {
+    locked: true,
+    canModify: false,
+};
 
 const TOKEN_BYTE_LENGTH = 32;
 
 /** Builds the reserved R2 key for an artifact's hidden metadata object. */
 export function metadataObjectKey(artifactId: string): string {
-  return `${artifactId}/${ARTIFACT_METADATA_FILENAME}`;
+    return `${artifactId}/${ARTIFACT_METADATA_FILENAME}`;
 }
 
 /** Creates fresh, unprotected metadata for a newly created artifact. */
-export function createArtifactMetadata(label: string, now: Date = new Date()): ArtifactMetadata {
-  return { label, createdAt: now.toISOString() };
+export function createArtifactMetadata(
+    label: string,
+    now: Date = new Date(),
+): ArtifactMetadata {
+    return { label, createdAt: now.toISOString() };
 }
 
 /**
@@ -40,23 +49,28 @@ export function createArtifactMetadata(label: string, now: Date = new Date()): A
  * listings), so this is a heuristic, not a contract:
  *  - one file: that file's own path.
  *  - every file shares one top-level folder: that folder's name.
- *  - otherwise (loose files with no common folder): a file count.
+ *  - otherwise (loose files with no common folder): the file name without extension.
  */
 export function deriveArtifactLabel(paths: string[]): string {
-  if (paths.length === 0) return "";
-  if (paths.length === 1) return paths[0];
+    if (paths.length === 0) return "";
 
-  const topSegments = paths.map((path) => path.split("/")[0]);
-  const sharesOneFolder =
-    paths.every((path) => path.includes("/")) &&
-    topSegments.every((segment) => segment === topSegments[0]);
-  if (sharesOneFolder) return topSegments[0];
+    if (paths.length === 1) return getNameWithoutExtension(paths[0]);
 
-  return `${paths.length} files`;
+    const topLevelFolderName = paths[0].split("/")[0];
+    if (paths.every((path) => path.startsWith(`${topLevelFolderName}/`))) {
+        return topLevelFolderName;
+    }
+
+    return getNameWithoutExtension(paths[0]);
+}
+
+export function getNameWithoutExtension(path: string): string {
+    const fileName = path.split("/").pop() ?? "";
+    return fileName.replace(/\.[^/.]+$/, "");
 }
 
 export function serializeArtifactMetadata(metadata: ArtifactMetadata): string {
-  return JSON.stringify(metadata);
+    return JSON.stringify(metadata);
 }
 
 /**
@@ -68,23 +82,35 @@ export function serializeArtifactMetadata(metadata: ArtifactMetadata): string {
  * "malformed metadata" and fails closed.
  */
 export function parseArtifactMetadata(raw: string): ArtifactMetadata | null {
-  let value: unknown;
-  try {
-    value = JSON.parse(raw);
-  } catch {
-    return null;
-  }
-  if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
+    let value: unknown;
+    try {
+        value = JSON.parse(raw);
+    } catch {
+        return null;
+    }
+    if (typeof value !== "object" || value === null || Array.isArray(value))
+        return null;
 
-  const record = value as Record<string, unknown>;
-  if (typeof record.label !== "string" || typeof record.createdAt !== "string") return null;
-  if (record.token !== undefined && (typeof record.token !== "string" || record.token.length === 0)) {
-    return null;
-  }
+    const record = value as Record<string, unknown>;
+    if (
+        typeof record.label !== "string" ||
+        typeof record.createdAt !== "string"
+    )
+        return null;
+    if (
+        record.token !== undefined &&
+        (typeof record.token !== "string" || record.token.length === 0)
+    ) {
+        return null;
+    }
 
-  const metadata: ArtifactMetadata = { ...record, label: record.label, createdAt: record.createdAt };
-  if (record.token !== undefined) metadata.token = record.token as string;
-  return metadata;
+    const metadata: ArtifactMetadata = {
+        ...record,
+        label: record.label,
+        createdAt: record.createdAt,
+    };
+    if (record.token !== undefined) metadata.token = record.token as string;
+    return metadata;
 }
 
 /**
@@ -94,35 +120,40 @@ export function parseArtifactMetadata(raw: string): ArtifactMetadata | null {
  * leading bytes of a guessed token were correct.
  */
 export function timingSafeEqual(a: string, b: string): boolean {
-  const aBytes = new TextEncoder().encode(a);
-  const bBytes = new TextEncoder().encode(b);
-  const length = Math.max(aBytes.length, bBytes.length, 1);
-  let diff = aBytes.length ^ bBytes.length;
-  for (let i = 0; i < length; i++) {
-    diff |= (aBytes[i] ?? 0) ^ (bBytes[i] ?? 0);
-  }
-  return diff === 0;
+    const aBytes = new TextEncoder().encode(a);
+    const bBytes = new TextEncoder().encode(b);
+    const length = Math.max(aBytes.length, bBytes.length, 1);
+    let diff = aBytes.length ^ bBytes.length;
+    for (let i = 0; i < length; i++) {
+        diff |= (aBytes[i] ?? 0) ^ (bBytes[i] ?? 0);
+    }
+    return diff === 0;
 }
 
 /** Generates a 256-bit, URL-safe, server-side-only lock token. */
 export function generateArtifactToken(): string {
-  const bytes = new Uint8Array(TOKEN_BYTE_LENGTH);
-  crypto.getRandomValues(bytes);
-  let binary = "";
-  for (const byte of bytes) binary += String.fromCharCode(byte);
-  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+    const bytes = new Uint8Array(TOKEN_BYTE_LENGTH);
+    crypto.getRandomValues(bytes);
+    let binary = "";
+    for (const byte of bytes) binary += String.fromCharCode(byte);
+    return btoa(binary)
+        .replace(/\+/g, "-")
+        .replace(/\//g, "_")
+        .replace(/=+$/, "");
 }
 
 /** Derives auth state from metadata that is known to exist and parse successfully. */
 export function deriveAuthStateForMetadata(
-  metadata: ArtifactMetadata,
-  suppliedToken: string | null,
+    metadata: ArtifactMetadata,
+    suppliedToken: string | null,
 ): ArtifactAuthState {
-  if (metadata.token === undefined) return UNPROTECTED_AUTH_STATE;
-  return {
-    locked: true,
-    canModify: suppliedToken !== null && timingSafeEqual(suppliedToken, metadata.token),
-  };
+    if (metadata.token === undefined) return UNPROTECTED_AUTH_STATE;
+    return {
+        locked: true,
+        canModify:
+            suppliedToken !== null &&
+            timingSafeEqual(suppliedToken, metadata.token),
+    };
 }
 
 /**
@@ -133,19 +164,27 @@ export function deriveAuthStateForMetadata(
  * "unlocked".
  */
 export async function loadArtifactAuth(
-  bucket: R2Bucket,
-  artifactId: string,
-  suppliedToken: string | null,
+    bucket: R2Bucket,
+    artifactId: string,
+    suppliedToken: string | null,
 ): Promise<ArtifactAuthResult> {
-  const metadataObject = await bucket.get(metadataObjectKey(artifactId));
-  if (metadataObject === null) {
-    return { auth: UNPROTECTED_AUTH_STATE, metadataObject: null, metadata: null };
-  }
+    const metadataObject = await bucket.get(metadataObjectKey(artifactId));
+    if (metadataObject === null) {
+        return {
+            auth: UNPROTECTED_AUTH_STATE,
+            metadataObject: null,
+            metadata: null,
+        };
+    }
 
-  const metadata = parseArtifactMetadata(await metadataObject.text());
-  if (metadata === null) {
-    return { auth: MALFORMED_AUTH_STATE, metadataObject, metadata: null };
-  }
+    const metadata = parseArtifactMetadata(await metadataObject.text());
+    if (metadata === null) {
+        return { auth: MALFORMED_AUTH_STATE, metadataObject, metadata: null };
+    }
 
-  return { auth: deriveAuthStateForMetadata(metadata, suppliedToken), metadataObject, metadata };
+    return {
+        auth: deriveAuthStateForMetadata(metadata, suppliedToken),
+        metadataObject,
+        metadata,
+    };
 }

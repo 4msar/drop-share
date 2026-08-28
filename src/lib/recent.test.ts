@@ -30,6 +30,28 @@ describe("addRecentItem", () => {
     ]);
   });
 
+  it("stores a label when one is given", () => {
+    const items = addRecentItem("abc123", 1000, "my-site");
+    expect(items).toEqual([{ id: "abc123", visitedAt: 1000, label: "my-site" }]);
+  });
+
+  it("omits the label field entirely when none is given", () => {
+    const items = addRecentItem("abc123", 1000);
+    expect(items[0]).not.toHaveProperty("label");
+  });
+
+  it("updates the label on a re-visit", () => {
+    addRecentItem("abc123", 1000, "old-label");
+    const items = addRecentItem("abc123", 2000, "new-label");
+    expect(items).toEqual([{ id: "abc123", visitedAt: 2000, label: "new-label" }]);
+  });
+
+  it("keeps the previously known label when a re-visit doesn't supply one", () => {
+    addRecentItem("abc123", 1000, "my-site");
+    const items = addRecentItem("abc123", 2000);
+    expect(items).toEqual([{ id: "abc123", visitedAt: 2000, label: "my-site" }]);
+  });
+
   it("evicts the oldest entry and retries when the store is full", () => {
     addRecentItem("old", 1000);
     addRecentItem("mid", 2000);

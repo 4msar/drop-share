@@ -27,6 +27,7 @@ interface Listing {
     path?: string;
     locked?: boolean;
     canModify?: boolean;
+    label?: string;
 }
 
 const LOCK_URL_PATTERN = /^\/api\/artifact\/[^/?]+\/lock/;
@@ -74,6 +75,7 @@ function stubListing(initial: Listing, options: { lockToken?: string } = {}) {
                     directories: initial.directories ?? [],
                     locked,
                     canModify: effectiveCanModify,
+                    label: initial.label,
                 }),
                 {
                     status: 200,
@@ -628,6 +630,48 @@ describe("recent artifacts", () => {
         await waitFor(() =>
             expect(getRecentItems().some((item) => item.id === ID)).toBe(true),
         );
+    });
+
+    it("stores the artifact's label from the listing response in the recent list", async () => {
+        stubListing({ files: [file("a.txt")], label: "My Cool Site" });
+        await renderViewer();
+
+        await waitFor(() =>
+            expect(
+                getRecentItems().find((item) => item.id === ID)?.label,
+            ).toBe("My Cool Site"),
+        );
+    });
+
+    it("leaves the recent item without a label for a legacy artifact that has none", async () => {
+        stubListing({ files: [file("a.txt")] });
+        await renderViewer();
+
+        await waitFor(() =>
+            expect(getRecentItems().some((item) => item.id === ID)).toBe(true),
+        );
+        expect(
+            getRecentItems().find((item) => item.id === ID)?.label,
+        ).toBeUndefined();
+    });
+
+    it("shows a recent artifact's label instead of its id, falling back to the id when there is none", async () => {
+        addRecentItem("labeled-artifact", Date.now() - 60_000, "My Cool Site");
+        addRecentItem("plain-artifact", Date.now() - 30_000);
+        stubListing({ files: [file("a.txt")] });
+        await renderViewer();
+
+        await waitFor(() => expect(getRecentItems().length).toBe(3));
+
+        screen.getByRole("button", { name: /switch artifact/i }).click();
+
+        expect(
+            await screen.findByRole("link", { name: /my cool site/i }),
+        ).toBeTruthy();
+        expect(screen.queryByText("labeled-artifact")).toBeNull();
+        expect(
+            await screen.findByRole("link", { name: /plain-artifact/i }),
+        ).toBeTruthy();
     });
 
     it("does not show a switcher when this is the only recent artifact", async () => {

@@ -1,17 +1,17 @@
 export interface RecentItem {
     id: string;
     visitedAt: number;
+    /** Human-readable label from the artifact's metadata, if it has one. Shown instead of the id in the recent list. */
+    label?: string;
 }
 
 export const STORAGE_KEY = "drop-share:recent";
 
 function isRecentItem(value: unknown): value is RecentItem {
-    return (
-        typeof value === "object" &&
-        value !== null &&
-        typeof (value as RecentItem).id === "string" &&
-        typeof (value as RecentItem).visitedAt === "number"
-    );
+    if (typeof value !== "object" || value === null) return false;
+    const item = value as RecentItem;
+    if (typeof item.id !== "string" || typeof item.visitedAt !== "number") return false;
+    return item.label === undefined || typeof item.label === "string";
 }
 
 /** Recently viewed artifacts, newest first. */
@@ -27,16 +27,21 @@ export function getRecentItems(): RecentItem[] {
 }
 
 /**
- * Records that an artifact was viewed, moving it to the front. If storage is
- * full, the oldest entries are dropped until the write fits.
+ * Records that an artifact was viewed, moving it to the front and refreshing
+ * its label (if one is known this time - a legacy artifact fetched before
+ * its label was known keeps whatever it had). If storage is full, the oldest
+ * entries are dropped until the write fits.
  */
 export function addRecentItem(
     id: string,
     visitedAt: number = Date.now(),
+    label?: string,
 ): RecentItem[] {
+    const current = getRecentItems();
+    const resolvedLabel = label || current.find((item) => item.id === id)?.label;
     const items = [
-        { id, visitedAt },
-        ...getRecentItems().filter((item) => item.id !== id),
+        { id, visitedAt, ...(resolvedLabel ? { label: resolvedLabel } : {}) },
+        ...current.filter((item) => item.id !== id),
     ];
     return persist(items);
 }
