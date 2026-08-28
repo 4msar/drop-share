@@ -2,12 +2,13 @@ import { useCallback, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router";
 import { Button } from "./Button";
 import { RecentSwitcher } from "./RecentSwitcher";
-import { deleteArtifact, uploadIntoArtifact } from "../lib/artifact";
+import { deleteArtifact, lockArtifact, uploadIntoArtifact } from "../lib/artifact";
 import { removeRecentItem } from "../lib/recent";
 import type { RecentItem } from "../lib/recent";
 import { toggleTheme } from "../lib/theme";
 import {
     ActionIcon,
+    LockIcon,
     ShareIcon,
     ThemeIcon,
     TrashIcon,
@@ -24,9 +25,13 @@ interface HeaderProps {
     subPath: string;
     recentItems: RecentItem[];
     isRoot: boolean;
+    locked: boolean;
+    canModify: boolean;
+    token: string | null;
     onDeleted: () => void;
     onReload: () => void;
     onError: (message: string | null) => void;
+    onLocked: (token: string) => void;
 }
 
 export function Header({
@@ -36,13 +41,20 @@ export function Header({
     subPath,
     recentItems,
     isRoot,
+    locked,
+    canModify,
+    token,
     onDeleted,
     onReload,
     onError,
+    onLocked,
 }: HeaderProps) {
     const navigate = useNavigate();
     const [actionsOpen, setActionsOpen] = useState(false);
     const [uploading, setUploading] = useState(false);
+    const [locking, setLocking] = useState(false);
+    const [lockToken, setLockToken] = useState<string | null>(null);
+    const [lockCopyLabel, setLockCopyLabel] = useState("Copy");
     const [shareLabel, setShareLabel] = useState("Share");
     const uploadInputRef = useRef<HTMLInputElement>(null);
 
@@ -70,7 +82,7 @@ export function Header({
         )
             return;
         try {
-            await deleteArtifact(currentId);
+            await deleteArtifact(currentId, token);
             removeRecentItem(currentId);
             onDeleted();
             window.setTimeout(
@@ -84,7 +96,7 @@ export function Header({
                     : "Failed to delete artifact.",
             );
         }
-    }, [currentId, navigate, onDeleted, onError]);
+    }, [currentId, navigate, onDeleted, onError, token]);
 
     const onUploadFiles = useCallback(
         async (files: File[]) => {
@@ -92,7 +104,7 @@ export function Header({
             setUploading(true);
             onError(null);
             try {
-                await uploadIntoArtifact(currentId, subPath, files);
+                await uploadIntoArtifact(currentId, subPath, files, token);
                 onReload();
             } catch (error) {
                 onError(
@@ -103,8 +115,41 @@ export function Header({
                 if (uploadInputRef.current) uploadInputRef.current.value = "";
             }
         },
-        [currentId, onError, onReload, subPath],
+        [currentId, onError, onReload, subPath, token],
     );
+
+    const onLock = useCallback(async () => {
+        if (
+            !window.confirm(
+                "Lock this artifact? You'll get a one-time token needed to make future changes - it can't be recovered if lost.",
+            )
+        )
+            return;
+        setLocking(true);
+        onError(null);
+        try {
+            const newToken = await lockArtifact(currentId);
+            setLockToken(newToken);
+            onLocked(newToken);
+        } catch (error) {
+            onError(
+                error instanceof Error ? error.message : "Failed to lock artifact.",
+            );
+        } finally {
+            setLocking(false);
+        }
+    }, [currentId, onError, onLocked]);
+
+    const onCopyLockToken = useCallback(async () => {
+        if (!lockToken) return;
+        try {
+            await navigator.clipboard.writeText(lockToken);
+            setLockCopyLabel("Copied!");
+        } catch {
+            setLockCopyLabel("Copy failed");
+        }
+        window.setTimeout(() => setLockCopyLabel("Copy"), COPY_FEEDBACK_MS);
+    }, [lockToken]);
 
     return (
         <header className="relative z-20 flex h-9 shrink-0 items-center justify-between border-b border-edge bg-surface px-2">
@@ -182,19 +227,35 @@ export function Header({
                                     <ShareIcon className="size-3.5 shrink-0" />
                                     {shareLabel}
                                 </button>
-                                <button
-                                    type="button"
-                                    disabled={uploading}
-                                    onClick={() => {
-                                        delayedAction();
-                                        uploadInputRef.current?.click();
-                                    }}
-                                    className="flex h-8 w-full items-center gap-2 rounded-md px-2.5 text-left text-xs text-heading hover:bg-brand-soft disabled:opacity-60"
-                                >
-                                    <UploadIcon className="size-3.5 shrink-0" />
-                                    {uploading ? "Uploading…" : "Upload more"}
-                                </button>
-                                {isRoot && (
+                                {canModify && (
+                                    <button
+                                        type="button"
+                                        disabled={uploading}
+                                        onClick={() => {
+                                            delayedAction();
+                                            uploadInputRef.current?.click();
+                                        }}
+                                        className="flex h-8 w-full items-center gap-2 rounded-md px-2.5 text-left text-xs text-heading hover:bg-brand-soft disabled:opacity-60"
+                                    >
+                                        <UploadIcon className="size-3.5 shrink-0" />
+                                        {uploading ? "Uploading…" : "Upload more"}
+                                    </button>
+                                )}
+                                {!locked && (
+                                    <button
+                                        type="button"
+                                        disabled={locking}
+                                        onClick={() => {
+                                            delayedAction();
+                                            void onLock();
+                                        }}
+                                        className="flex h-8 w-full items-center gap-2 rounded-md px-2.5 text-left text-xs text-heading hover:bg-brand-soft disabled:opacity-60"
+                                    >
+                                        <LockIcon className="size-3.5 shrink-0" />
+                                        {locking ? "Locking…" : "Lock"}
+                                    </button>
+                                )}
+                                {isRoot && canModify && (
                                     <button
                                         type="button"
                                         aria-label="Delete"
@@ -213,6 +274,36 @@ export function Header({
                     )}
                 </div>
             </div>
+
+            {lockToken !== null && (
+                <div className="fixed inset-0 z-30 grid place-items-center bg-black/40 p-4">
+                    <div className="w-full max-w-sm rounded-2xl border border-edge bg-panel p-5 shadow-2xl">
+                        <h2 className="mb-2 text-sm font-medium text-heading">
+                            Artifact locked
+                        </h2>
+                        <p className="mb-3 text-xs text-body">
+                            Save this token now - it grants edit access and
+                            can&apos;t be shown again.
+                        </p>
+                        <div className="mb-4 flex items-center gap-2">
+                            <code className="flex-1 truncate rounded-md border border-edge bg-surface px-2 py-1.5 text-xs">
+                                {lockToken}
+                            </code>
+                            <Button size="sm" onClick={onCopyLockToken}>
+                                {lockCopyLabel}
+                            </Button>
+                        </div>
+                        <Button
+                            variant="primary"
+                            size="sm"
+                            className="w-full"
+                            onClick={() => setLockToken(null)}
+                        >
+                            Done
+                        </Button>
+                    </div>
+                </div>
+            )}
         </header>
     );
 }

@@ -77,6 +77,7 @@ Other endpoints:
 GET    /api/health              liveness check
 GET    /api/artifact/:id        JSON listing of an artifact's files/folders
 DELETE /api/artifact/:id        deletes every object under that artifact id
+POST   /api/artifact/:id/lock   protects an unprotected artifact (see below)
 GET    /a/:id/                  human-facing browse/download page (see above)
 ```
 
@@ -104,6 +105,11 @@ Every limit is enforced **server-side**, before any object is written to R2:
 Oversized uploads get `413`. The browser and CLI also check sizes locally
 first, purely for fast feedback — that check is never trusted on its own.
 
+Every newly-created artifact also gets a hidden `.artifact.json` marker (see
+"Optional artifact protection" below), and it counts toward both limits like
+any other object — so the effective ceiling for a brand-new artifact is a few
+dozen bytes below the configured maximums.
+
 ## ZIP security
 
 ZIP extraction runs entirely inside the Worker using
@@ -130,17 +136,63 @@ metadata claimed. `worker/lib/zip.test.ts` has a regression test that
 specifically crafts a ZIP with a falsified (too-small) declared size to prove
 this path — not just the cheap metadata check — is what actually stops it.
 
-## Security model (read this before deploying publicly)
+## Optional artifact protection (Lock)
 
-**There is no authentication.** Anyone with network access to the Worker can
-upload, browse, update, and delete artifacts. This is an explicit product decision
-for a personal/trusted-audience tool, not a partial implementation — do not
-deploy this to a domain you'd mind being used as an open drop box. If you
-need access control later, the natural place to add it is
+**There is still no authentication by default.** Every artifact starts out
+exactly as unrestricted as before — anyone with network access can upload
+into it, update it, or delete it. What's new is an **opt-in, per-artifact**
+lock an owner can apply from the viewer's action menu, without affecting any
+other artifact.
+
+Every newly-created artifact gets a hidden metadata marker at
+`<ulid>/.artifact.json`:
+
+```json
+{ "label": "", "createdAt": "2026-08-28T12:00:00.000Z" }
+```
+
+This file is never exposed: it's filtered out of every listing (root and
+nested), and a direct request for any dot-prefixed path — `.artifact.json` or
+otherwise — always `404`s, the same as a nonexistent file. Legacy artifacts
+created before this feature has no such marker at all, and behave exactly as
+they always have (unrestricted, and lockable for the first time whenever the
+owner chooses to).
+
+**Locking** (`POST /api/artifact/:id/lock`) generates a token server-side,
+stores it in the metadata file, and returns it exactly once — it is never
+recoverable through the API afterward, so the viewer shows it in a one-time
+dialog with a copy button. Locking an already-protected artifact `409`s
+rather than silently reissuing a new token.
+
+Once locked, mutating requests must present the token:
+
+```
+GET    /api/artifact/:id?token=<token>        (token is optional even when locked — listings stay public)
+POST   /api/upload                            X-Artifact-Token: <token>   (when updating an existing artifact)
+DELETE /api/artifact/:id                      X-Artifact-Token: <token>
+```
+
+A missing or incorrect token on a protected artifact's mutation gets `403`.
+The listing response includes safe booleans — `locked` and `canModify` — and
+never the token or the rest of the metadata file; the frontend keeps the
+token in the URL's `?token=` query param (never in `localStorage`/recent-items),
+carrying it across folder navigation and refreshes. That also means **sharing
+the current URL shares the token** if the artifact is locked — this is
+intentional (it's how a collaborator gets edit access), but is worth knowing
+before pasting a locked artifact's URL somewhere public.
+
+A metadata file that exists but fails to parse is treated as protected with
+no valid token (fails closed) rather than as unrestricted, so a corrupted
+`.artifact.json` can never accidentally reopen an artifact.
+
+If you need access control that isn't per-artifact and opt-in — e.g. gating
+the whole tool — the natural place to add it is
 [Cloudflare Access](https://developers.cloudflare.com/cloudflare-one/policies/access/)
 in front of the whole zone (no code changes needed), or an
 `Authorization: Bearer` check re-added to `worker/routes/upload.ts` /
 `handleArtifactDelete`.
+
+## Security model (read this before deploying publicly)
 
 **Untrusted content isolation, without a separate origin.** The original
 design considered a separate `usercontent.*` subdomain so uploaded HTML/JS
@@ -235,10 +287,12 @@ drop-share/
 │   │   ├── contentType.ts     extension → MIME, inline-vs-download allowlist
 │   │   ├── zip.ts             central-directory validation + streaming safe extraction
 │   │   ├── r2.ts               R2 listing/delete helpers
+│   │   ├── artifactMeta.ts    .artifact.json parsing, token auth-state derivation
 │   │   └── http.ts            jsonOk/jsonError/escapeHtml
 │   └── routes/
 │       ├── upload.ts          POST /api/upload (all four modes)
 │       ├── browse.ts          file bytes, markdown render, listing JSON, delete
+│       ├── lock.ts            POST /api/artifact/:id/lock
 │       └── health.ts
 ├── src/                       React + Tailwind client (Vite)
 │   ├── App.tsx                react-router: / and /a/:id/*

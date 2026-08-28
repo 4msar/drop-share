@@ -37,6 +37,7 @@ export default function ViewerPage() {
         getRecentItems(),
     );
     const selectedFromQuery = searchParams.get("file");
+    const token = searchParams.get("token");
 
     const setFileQueryParam = (name: string | null, replace = true) => {
         setSearchParams(
@@ -53,13 +54,28 @@ export default function ViewerPage() {
         );
     };
 
+    // Locking generates the token that keeps *this* browser able to modify
+    // the artifact going forward, so it's folded into the URL immediately -
+    // the effect above then refetches the listing with it and canModify
+    // flips to true.
+    const onLocked = (newToken: string) => {
+        setSearchParams(
+            (current) => {
+                const next = new URLSearchParams(current);
+                next.set("token", newToken);
+                return next;
+            },
+            { replace: true },
+        );
+    };
+
     useEffect(() => {
         // `cancelled` matters because navigating between folders quickly can leave
         // an earlier request in flight; without it a slow response for the folder
         // you just left can overwrite the one you are now looking at.
         let cancelled = false;
 
-        fetchArtifactListing(id, routePath).then(
+        fetchArtifactListing(id, routePath, token).then(
             (next) => {
                 if (cancelled) return;
                 setListing(next);
@@ -81,7 +97,7 @@ export default function ViewerPage() {
         return () => {
             cancelled = true;
         };
-    }, [id, routePath, reloadToken]);
+    }, [id, routePath, token, reloadToken]);
 
     useEffect(() => {
         document.title =
@@ -200,9 +216,13 @@ export default function ViewerPage() {
                 recentItems={recentItems}
                 isRoot={isRoot}
                 subPath={subPath}
+                locked={listing.locked}
+                canModify={listing.canModify}
+                token={token}
                 onDeleted={() => setDeleted(true)}
-                onReload={() => setReloadToken((token) => token + 1)}
+                onReload={() => setReloadToken((count) => count + 1)}
                 onError={setActionError}
+                onLocked={onLocked}
             />
 
             {actionError !== null && (
@@ -229,6 +249,7 @@ export default function ViewerPage() {
                     activeName={selected?.name ?? null}
                     onPreview={(file) => setFileQueryParam(file.name, false)}
                     open={fileListOpen}
+                    token={token}
                 />
                 <PreviewPane
                     id={id}

@@ -25,16 +25,22 @@ export async function listArtifactChildren(
   do {
     const page = await bucket.list({ prefix, delimiter: "/", cursor, include: ["httpMetadata"] });
     for (const object of page.objects) {
+      const name = object.key.slice(prefix.length);
+      // Hidden files (dot-prefixed, e.g. the artifact metadata marker) are
+      // internal bookkeeping - never part of a public listing.
+      if (name.startsWith(".")) continue;
       files.push({
         key: object.key,
-        name: object.key.slice(prefix.length),
+        name,
         size: object.size,
         uploaded: object.uploaded,
         contentType: object.httpMetadata?.contentType,
       });
     }
     for (const delimitedPrefix of page.delimitedPrefixes) {
-      directories.push(delimitedPrefix.slice(prefix.length));
+      const name = delimitedPrefix.slice(prefix.length);
+      if (name.startsWith(".")) continue;
+      directories.push(name);
     }
     cursor = page.truncated ? page.cursor : undefined;
   } while (cursor);

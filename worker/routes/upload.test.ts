@@ -172,6 +172,35 @@ describe("POST /api/upload: mode=directory", () => {
   });
 });
 
+describe("POST /api/upload: hidden metadata marker", () => {
+  it("creates .artifact.json on a fresh artifact, counted toward the file-count limit", async () => {
+    // 1999 real files + the auto-created metadata marker = 2000, exactly at
+    // the cap - one more real file would have to be rejected.
+    const files = Array.from({ length: 1999 }, (_, i) => ({ name: `f${i}.txt`, content: "" }));
+    const atCap = await exports.default.fetch(uploadRequest("directory", files));
+    expect(atCap.status).toBe(200);
+
+    const overCap = await exports.default.fetch(
+      uploadRequest("directory", [...files, { name: "one-more.txt", content: "" }]),
+    );
+    expect(overCap.status).toBe(400);
+  });
+
+  it("does not create a second metadata object when the artifact is later updated", async () => {
+    const created = await (
+      await exports.default.fetch(uploadRequest("file", [{ name: "a.txt", content: "a" }]))
+    ).json();
+    await exports.default.fetch(uploadRequest("directory", [{ name: "b.txt", content: "b" }], { id: created.id }));
+
+    const listing = await exports.default.fetch(`https://artifacts.example.com/api/artifact/${created.id}`);
+    const body = await listing.json();
+    // The metadata marker is hidden from listings regardless, but if a
+    // second one had been written it would still count toward the file
+    // limit - so this only really needs one round of re-upload to exercise.
+    expect(body.files.map((f: { name: string }) => f.name).sort()).toEqual(["a.txt", "b.txt"]);
+  });
+});
+
 describe("POST /api/upload: validation", () => {
   it("rejects a missing mode", async () => {
     const form = new FormData();

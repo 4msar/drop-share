@@ -1,3 +1,9 @@
+import {
+  createArtifactMetadata,
+  loadArtifactAuth,
+  metadataObjectKey,
+  serializeArtifactMetadata,
+} from "../lib/artifactMeta.js";
 import { getContentType } from "../lib/contentType.js";
 import { jsonError, jsonOk } from "../lib/http.js";
 import { generateArtifactId, isValidArtifactId } from "../lib/ids.js";
@@ -5,6 +11,8 @@ import { buildObjectKey, normalizeRelativePath } from "../lib/paths.js";
 import { listAllArtifactKeys } from "../lib/r2.js";
 import { PayloadTooLargeError, SizeBudget, checkFileSize } from "../lib/validation.js";
 import { ZipValidationError, extractZipSafely } from "../lib/zip.js";
+
+const METADATA_CONTENT_TYPE = "application/json; charset=utf-8";
 
 class UploadValidationError extends Error {}
 class ArtifactNotFoundError extends Error {}
@@ -57,6 +65,12 @@ export async function handleUpload(request: Request, env: Env): Promise<Response
       return jsonError(400, "Invalid artifact id");
     }
     existingId = rawId;
+  }
+
+  if (existingId) {
+    const token = request.headers.get("X-Artifact-Token");
+    const auth = await loadArtifactAuth(env.ARTIFACTS_BUCKET, existingId, token);
+    if (!auth.auth.canModify) return jsonError(403, "Forbidden");
   }
 
   const parts = form.getAll("files").filter((value): value is File => value instanceof File);
@@ -141,6 +155,7 @@ async function uploadSingleFile(
   }
 
   const id = existingId ?? generateArtifactId();
+  let metadataBody: string | null = null;
 
   if (existingId) {
     const existing = await loadExistingArtifact(env.ARTIFACTS_BUCKET, existingId, new Set([relativePath]));
@@ -155,6 +170,22 @@ async function uploadSingleFile(
     const budget = new SizeBudget(limits.maxArtifactSizeBytes);
     budget.add(existing.totalSize);
     budget.add(file.size);
+  } else {
+    // A brand-new artifact also gets a hidden `.artifact.json` marker, which
+    // counts toward the same limits as any other object in it.
+    metadataBody = serializeArtifactMetadata(createArtifactMetadata(""));
+    const metadataBytes = new TextEncoder().encode(metadataBody).length;
+    const totalFileCount = 2;
+    if (totalFileCount > limits.maxArtifactFileCount) {
+      throw new UploadValidationError(
+        `Artifact would contain ${totalFileCount} files, exceeding the ${limits.maxArtifactFileCount} file limit`,
+      );
+    }
+    if (file.size + metadataBytes > limits.maxArtifactSizeBytes) {
+      throw new PayloadTooLargeError(
+        `Total artifact size would be ${file.size + metadataBytes} bytes, exceeding the ${limits.maxArtifactSizeBytes}-byte maximum`,
+      );
+    }
   }
 
   const key = buildObjectKey(id, relativePath);
@@ -163,6 +194,12 @@ async function uploadSingleFile(
   await env.ARTIFACTS_BUCKET.put(key, await file.arrayBuffer(), {
     httpMetadata: { contentType },
   });
+
+  if (metadataBody !== null) {
+    await env.ARTIFACTS_BUCKET.put(metadataObjectKey(id), metadataBody, {
+      httpMetadata: { contentType: METADATA_CONTENT_TYPE },
+    });
+  }
 
   return { id, url: `/a/${id}/` };
 }
@@ -199,6 +236,7 @@ async function uploadDirectory(
   const id = existingId ?? generateArtifactId();
   const budget = new SizeBudget(limits.maxArtifactSizeBytes);
   let fileCount = planned.length;
+  let metadataBody: string | null = null;
 
   if (existingId) {
     const existing = await loadExistingArtifact(env.ARTIFACTS_BUCKET, existingId, seenPaths);
@@ -207,6 +245,9 @@ async function uploadDirectory(
     }
     fileCount += existing.fileCount;
     budget.add(existing.totalSize);
+  } else {
+    metadataBody = serializeArtifactMetadata(createArtifactMetadata(""));
+    fileCount += 1;
   }
 
   if (fileCount > limits.maxArtifactFileCount) {
@@ -218,11 +259,20 @@ async function uploadDirectory(
   for (const { file } of planned) {
     budget.add(file.size);
   }
+  if (metadataBody !== null) {
+    budget.add(new TextEncoder().encode(metadataBody).length);
+  }
 
   for (const { path, file } of planned) {
     const key = buildObjectKey(id, path);
     await env.ARTIFACTS_BUCKET.put(key, await file.arrayBuffer(), {
       httpMetadata: { contentType: getContentType(path) },
+    });
+  }
+
+  if (metadataBody !== null) {
+    await env.ARTIFACTS_BUCKET.put(metadataObjectKey(id), metadataBody, {
+      httpMetadata: { contentType: METADATA_CONTENT_TYPE },
     });
   }
 
@@ -248,6 +298,7 @@ async function uploadZipExtract(
   });
 
   const id = existingId ?? generateArtifactId();
+  let metadataBody: string | null = null;
 
   if (existingId) {
     const extractedPaths = new Set(extracted.map((entry) => entry.path));
@@ -266,12 +317,32 @@ async function uploadZipExtract(
     for (const entry of extracted) {
       budget.add(entry.data.byteLength);
     }
+  } else {
+    metadataBody = serializeArtifactMetadata(createArtifactMetadata(""));
+    const metadataBytes = new TextEncoder().encode(metadataBody).length;
+    const combinedFileCount = extracted.length + 1;
+    if (combinedFileCount > limits.maxArtifactFileCount) {
+      throw new UploadValidationError(
+        `Artifact would contain ${combinedFileCount} files, exceeding the ${limits.maxArtifactFileCount} file limit`,
+      );
+    }
+    const budget = new SizeBudget(limits.maxArtifactSizeBytes);
+    for (const entry of extracted) {
+      budget.add(entry.data.byteLength);
+    }
+    budget.add(metadataBytes);
   }
 
   for (const entry of extracted) {
     const key = buildObjectKey(id, entry.path);
     await env.ARTIFACTS_BUCKET.put(key, entry.data, {
       httpMetadata: { contentType: getContentType(entry.path) },
+    });
+  }
+
+  if (metadataBody !== null) {
+    await env.ARTIFACTS_BUCKET.put(metadataObjectKey(id), metadataBody, {
+      httpMetadata: { contentType: METADATA_CONTENT_TYPE },
     });
   }
 

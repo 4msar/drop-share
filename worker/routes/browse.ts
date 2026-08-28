@@ -1,4 +1,5 @@
 import { marked } from "marked";
+import { loadArtifactAuth } from "../lib/artifactMeta.js";
 import {
     getContentType,
     isInlineSafe,
@@ -6,7 +7,7 @@ import {
 } from "../lib/contentType.js";
 import { escapeHtml, jsonError, jsonOk } from "../lib/http.js";
 import { isValidArtifactId } from "../lib/ids.js";
-import { normalizeRelativePath } from "../lib/paths.js";
+import { hasHiddenSegment, normalizeRelativePath } from "../lib/paths.js";
 import { deleteArtifact, listArtifactChildren } from "../lib/r2.js";
 
 // Files can now be updated in place (see the artifact re-upload feature), so
@@ -46,7 +47,7 @@ function normalizeListingPath(rawPath: string | undefined): string | null {
     const trimmed = rawPath.replace(/^\/+/, "").replace(/\/+$/, "");
     if (trimmed === "") return "";
     const normalized = normalizeRelativePath(trimmed);
-    if (normalized === null) return null;
+    if (normalized === null || hasHiddenSegment(normalized)) return null;
     return `${normalized}/`;
 }
 
@@ -54,16 +55,17 @@ export async function handleArtifactJson(
     id: string,
     env: Env,
     rawPath?: string,
+    token?: string | null,
 ): Promise<Response> {
     if (!isValidArtifactId(id)) return jsonError(404, "Artifact not found");
 
     const subPath = normalizeListingPath(rawPath);
     if (subPath === null) return jsonError(404, "Artifact not found");
 
-    const listing = await listArtifactChildren(
-        env.ARTIFACTS_BUCKET,
-        `${id}/${subPath}`,
-    );
+    const [authResult, listing] = await Promise.all([
+        loadArtifactAuth(env.ARTIFACTS_BUCKET, id, token ?? null),
+        listArtifactChildren(env.ARTIFACTS_BUCKET, `${id}/${subPath}`),
+    ]);
     if (listing.files.length === 0 && listing.directories.length === 0) {
         return jsonError(404, "Artifact not found");
     }
@@ -85,6 +87,10 @@ export async function handleArtifactJson(
             };
         }),
         directories: listing.directories,
+        // Safe booleans only - never the token or private metadata (label,
+        // createdAt) here, per the protected-artifacts authorization model.
+        locked: authResult.auth.locked,
+        canModify: authResult.auth.canModify,
     });
     // An artifact's contents can change (see the re-upload feature), and this
     // listing is what the viewer draws itself from - a cached copy would show
@@ -96,8 +102,11 @@ export async function handleArtifactJson(
 export async function handleArtifactDelete(
     id: string,
     env: Env,
+    token: string | null,
 ): Promise<Response> {
     if (!isValidArtifactId(id)) return jsonError(404, "Artifact not found");
+    const auth = await loadArtifactAuth(env.ARTIFACTS_BUCKET, id, token);
+    if (!auth.auth.canModify) return jsonError(403, "Forbidden");
     const deletedCount = await deleteArtifact(env.ARTIFACTS_BUCKET, id);
     if (deletedCount === 0) return jsonError(404, "Artifact not found");
     return jsonOk({ id, deleted: true });
@@ -115,18 +124,19 @@ async function serveViewerShell(
     env: Env,
     request: Request,
 ): Promise<Response> {
-    if (
-        relSubPath !== "" &&
-        normalizeRelativePath(relSubPath.replace(/\/$/, "")) === null
-    ) {
-        return jsonError(404, "Artifact not found");
+    if (relSubPath !== "") {
+        const normalized = normalizeRelativePath(relSubPath.replace(/\/$/, ""));
+        if (normalized === null || hasHiddenSegment(normalized)) {
+            return jsonError(404, "Artifact not found");
+        }
     }
 
-    const probe = await env.ARTIFACTS_BUCKET.list({
-        prefix: `${id}/${relSubPath}`,
-        limit: 1,
-    });
-    if (probe.objects.length === 0) {
+    // Reuses the same filtered listing the JSON API serves, rather than a raw
+    // R2 list, so an artifact/subfolder containing only hidden files (e.g.
+    // just `.artifact.json`) never produces a shell that the visible listing
+    // can then never fill in.
+    const listing = await listArtifactChildren(env.ARTIFACTS_BUCKET, `${id}/${relSubPath}`);
+    if (listing.files.length === 0 && listing.directories.length === 0) {
         return jsonError(404, "Artifact not found");
     }
 
@@ -140,7 +150,9 @@ async function serveFile(
     request: Request,
 ): Promise<Response> {
     const normalizedPath = normalizeRelativePath(relSubPath);
-    if (normalizedPath === null) return jsonError(404, "Artifact not found");
+    if (normalizedPath === null || hasHiddenSegment(normalizedPath)) {
+        return jsonError(404, "Artifact not found");
+    }
 
     const key = `${id}/${normalizedPath}`;
     const object = await env.ARTIFACTS_BUCKET.get(key);

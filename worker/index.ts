@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { jsonError } from "./lib/http.js";
 import { handleArtifactBrowse, handleArtifactDelete, handleArtifactJson } from "./routes/browse.js";
 import { handleHealth } from "./routes/health.js";
+import { handleArtifactLock } from "./routes/lock.js";
 import { handleUpload } from "./routes/upload.js";
 
 const app = new Hono<{ Bindings: Env }>();
@@ -17,10 +18,15 @@ app.post("/api/upload", (c) => handleUpload(c.req.raw, c.env));
 app.all("/api/upload", methodNotAllowed);
 
 app.get("/api/artifact/:id", (c) =>
-  handleArtifactJson(c.req.param("id"), c.env, c.req.query("path")),
+  handleArtifactJson(c.req.param("id"), c.env, c.req.query("path"), c.req.query("token") ?? null),
 );
-app.delete("/api/artifact/:id", (c) => handleArtifactDelete(c.req.param("id"), c.env));
+app.delete("/api/artifact/:id", (c) =>
+  handleArtifactDelete(c.req.param("id"), c.env, c.req.header("X-Artifact-Token") ?? null),
+);
 app.all("/api/artifact/:id", methodNotAllowed);
+
+app.post("/api/artifact/:id/lock", (c) => handleArtifactLock(c.req.param("id"), c.env));
+app.all("/api/artifact/:id/lock", methodNotAllowed);
 
 // `/a/<id>` with no trailing slash resolves the same way `/a/<id>/` does, so
 // both shapes are registered.

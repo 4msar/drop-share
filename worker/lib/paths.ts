@@ -30,6 +30,16 @@ export function normalizeRelativePath(rawPath: string): string | null {
   return safeSegments.join("/");
 }
 
+/**
+ * Whether any segment of an already-normalized relative path is dot-prefixed
+ * (e.g. the reserved `.artifact.json` metadata marker, or any hidden
+ * directory). Used to keep hidden objects out of public listings and direct
+ * file serving, regardless of how deep they're nested.
+ */
+export function hasHiddenSegment(path: string): boolean {
+  return path.split("/").some((segment) => segment.startsWith("."));
+}
+
 /** Builds the R2 object key for a file within an artifact, validating both parts. */
 export function buildObjectKey(artifactId: string, rawPath: string): string {
   if (!isValidArtifactId(artifactId)) {

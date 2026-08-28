@@ -1,6 +1,6 @@
 import { Link } from "react-router";
 import type { ArtifactFile } from "../lib/artifact";
-import { fileUrl, parentPath } from "../lib/artifact";
+import { fileUrl, parentPath, withToken } from "../lib/artifact";
 import {
     ARCHIVE_EXTENSIONS,
     formatBytes,
@@ -56,6 +56,7 @@ interface FileListProps {
     activeName: string | null;
     onPreview: (file: ArtifactFile) => void;
     open: boolean;
+    token: string | null;
 }
 
 export function FileList({
@@ -66,6 +67,7 @@ export function FileList({
     activeName,
     onPreview,
     open,
+    token,
 }: FileListProps) {
     const parent = parentPath(subPath);
 
@@ -82,7 +84,7 @@ export function FileList({
                         <span aria-hidden="true">
                             <FolderIcon className="size-4" />
                         </span>
-                        <Link className={NAME} to={`/a/${id}/${parent}`}>
+                        <Link className={NAME} to={withToken(`/a/${id}/${parent}`, token)}>
                             .. (parent directory)
                         </Link>
                     </li>
@@ -91,7 +93,7 @@ export function FileList({
                 {directories.map((dir) => (
                     <li key={dir} className={ROW}>
                         <ParentFolderIcon className="size-4" />
-                        <Link className={NAME} to={`/a/${id}/${subPath}${dir}`}>
+                        <Link className={NAME} to={withToken(`/a/${id}/${subPath}${dir}`, token)}>
                             {dir}
                         </Link>
                         <OpenInTab
