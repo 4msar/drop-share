@@ -31,5 +31,5 @@ dist-ssr
 !.env.example
 
 # AI files
-docs/superpower/
-.superpower/
+docs/superpowers/
+.superpowers/
