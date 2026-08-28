@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   ARTIFACT_METADATA_FILENAME,
   createArtifactMetadata,
+  deriveArtifactLabel,
   deriveAuthStateForMetadata,
   generateArtifactToken,
   metadataObjectKey,
@@ -71,6 +72,33 @@ describe("createArtifactMetadata / serializeArtifactMetadata / parseArtifactMeta
     const base = { label: "x", createdAt: "2026-08-28T12:00:00.000Z" };
     expect(parseArtifactMetadata(JSON.stringify({ ...base, token: "" }))).toBeNull();
     expect(parseArtifactMetadata(JSON.stringify({ ...base, token: 123 }))).toBeNull();
+  });
+});
+
+describe("deriveArtifactLabel", () => {
+  it("returns an empty label when there are no paths", () => {
+    expect(deriveArtifactLabel([])).toBe("");
+  });
+
+  it("labels a single file after its own path", () => {
+    expect(deriveArtifactLabel(["index.html"])).toBe("index.html");
+    expect(deriveArtifactLabel(["assets/logo.png"])).toBe("assets/logo.png");
+  });
+
+  it("labels a shared top-level folder after that folder", () => {
+    expect(deriveArtifactLabel(["site/index.html", "site/css/style.css"])).toBe("site");
+  });
+
+  it("falls back to a file count for loose files with no shared folder", () => {
+    expect(deriveArtifactLabel(["a.txt", "b.txt"])).toBe("2 files");
+  });
+
+  it("falls back to a file count when only some files are inside a folder", () => {
+    expect(deriveArtifactLabel(["a.txt", "dir/b.txt"])).toBe("2 files");
+  });
+
+  it("falls back to a file count when top-level folder names differ", () => {
+    expect(deriveArtifactLabel(["one/a.txt", "two/b.txt"])).toBe("2 files");
   });
 });
 

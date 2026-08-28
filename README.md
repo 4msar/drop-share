@@ -148,8 +148,15 @@ Every newly-created artifact gets a hidden metadata marker at
 `<ulid>/.artifact.json`:
 
 ```json
-{ "label": "", "createdAt": "2026-08-28T12:00:00.000Z" }
+{ "label": "my-site", "createdAt": "2026-08-28T12:00:00.000Z" }
 ```
+
+`label` is a best-effort, purely informational name derived from what was
+uploaded (`deriveArtifactLabel` in `worker/lib/artifactMeta.ts`): a single
+file's own path, a directory upload's shared top-level folder name, a ZIP's
+filename (minus `.zip`) for `zip`/`zip-extract` uploads, or a plain file count
+when there's no single natural name to derive. It's never validated or shown
+in any public listing.
 
 This file is never exposed: it's filtered out of every listing (root and
 nested), and a direct request for any dot-prefixed path — `.artifact.json` or

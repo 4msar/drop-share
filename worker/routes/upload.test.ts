@@ -1,5 +1,12 @@
-import { exports } from "cloudflare:workers";
+import { env, exports } from "cloudflare:workers";
+import { zipSync } from "fflate";
 import { describe, expect, it } from "vitest";
+
+async function readMetadataLabel(id: string): Promise<string> {
+  const object = await env.ARTIFACTS_BUCKET.get(`${id}/.artifact.json`);
+  const body = (await object!.json()) as { label: string };
+  return body.label;
+}
 
 function uploadRequest(
   mode: string,
@@ -198,6 +205,52 @@ describe("POST /api/upload: hidden metadata marker", () => {
     // second one had been written it would still count toward the file
     // limit - so this only really needs one round of re-upload to exercise.
     expect(body.files.map((f: { name: string }) => f.name).sort()).toEqual(["a.txt", "b.txt"]);
+  });
+
+  it("labels a mode=file upload after the uploaded file's own name", async () => {
+    const { id } = await (
+      await exports.default.fetch(uploadRequest("file", [{ name: "report.pdf", content: "x" }]))
+    ).json();
+    expect(await readMetadataLabel(id)).toBe("report.pdf");
+  });
+
+  it("labels a mode=zip upload after the zip's own filename", async () => {
+    const { id } = await (
+      await exports.default.fetch(uploadRequest("zip", [{ name: "release.zip", content: "x" }]))
+    ).json();
+    expect(await readMetadataLabel(id)).toBe("release.zip");
+  });
+
+  it("labels a mode=directory upload after its shared top-level folder", async () => {
+    const { id } = await (
+      await exports.default.fetch(
+        uploadRequest("directory", [
+          { name: "my-site/index.html", content: "x" },
+          { name: "my-site/css/style.css", content: "x" },
+        ]),
+      )
+    ).json();
+    expect(await readMetadataLabel(id)).toBe("my-site");
+  });
+
+  it("labels a mode=directory upload with no shared folder by file count", async () => {
+    const { id } = await (
+      await exports.default.fetch(
+        uploadRequest("directory", [
+          { name: "a.txt", content: "x" },
+          { name: "b.txt", content: "x" },
+        ]),
+      )
+    ).json();
+    expect(await readMetadataLabel(id)).toBe("2 files");
+  });
+
+  it("labels a mode=zip-extract upload after the archive's own filename, without the .zip suffix", async () => {
+    const zipBytes = zipSync({ "index.html": new TextEncoder().encode("<h1>hi</h1>") });
+    const { id } = await (
+      await exports.default.fetch(uploadRequest("zip-extract", [{ name: "release.zip", content: zipBytes }]))
+    ).json();
+    expect(await readMetadataLabel(id)).toBe("release");
   });
 });
 

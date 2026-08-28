@@ -33,6 +33,28 @@ export function createArtifactMetadata(label: string, now: Date = new Date()): A
   return { label, createdAt: now.toISOString() };
 }
 
+/**
+ * Best-effort human-readable label for a freshly-created artifact, derived
+ * from the relative paths of the files it was created from. Purely
+ * informational metadata (never validated, never exposed in public
+ * listings), so this is a heuristic, not a contract:
+ *  - one file: that file's own path.
+ *  - every file shares one top-level folder: that folder's name.
+ *  - otherwise (loose files with no common folder): a file count.
+ */
+export function deriveArtifactLabel(paths: string[]): string {
+  if (paths.length === 0) return "";
+  if (paths.length === 1) return paths[0];
+
+  const topSegments = paths.map((path) => path.split("/")[0]);
+  const sharesOneFolder =
+    paths.every((path) => path.includes("/")) &&
+    topSegments.every((segment) => segment === topSegments[0]);
+  if (sharesOneFolder) return topSegments[0];
+
+  return `${paths.length} files`;
+}
+
 export function serializeArtifactMetadata(metadata: ArtifactMetadata): string {
   return JSON.stringify(metadata);
 }

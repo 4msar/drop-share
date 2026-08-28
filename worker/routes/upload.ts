@@ -1,5 +1,6 @@
 import {
   createArtifactMetadata,
+  deriveArtifactLabel,
   loadArtifactAuth,
   metadataObjectKey,
   serializeArtifactMetadata,
@@ -172,8 +173,10 @@ async function uploadSingleFile(
     budget.add(file.size);
   } else {
     // A brand-new artifact also gets a hidden `.artifact.json` marker, which
-    // counts toward the same limits as any other object in it.
-    metadataBody = serializeArtifactMetadata(createArtifactMetadata(""));
+    // counts toward the same limits as any other object in it. The label is
+    // just the uploaded file's own name - there's nothing else to derive it
+    // from with only one file.
+    metadataBody = serializeArtifactMetadata(createArtifactMetadata(relativePath));
     const metadataBytes = new TextEncoder().encode(metadataBody).length;
     const totalFileCount = 2;
     if (totalFileCount > limits.maxArtifactFileCount) {
@@ -246,7 +249,10 @@ async function uploadDirectory(
     fileCount += existing.fileCount;
     budget.add(existing.totalSize);
   } else {
-    metadataBody = serializeArtifactMetadata(createArtifactMetadata(""));
+    // Labels the artifact after its common top-level folder when there is
+    // one (the typical drag-a-folder case), or a file count otherwise.
+    const label = deriveArtifactLabel(planned.map(({ path }) => path));
+    metadataBody = serializeArtifactMetadata(createArtifactMetadata(label));
     fileCount += 1;
   }
 
@@ -318,7 +324,10 @@ async function uploadZipExtract(
       budget.add(entry.data.byteLength);
     }
   } else {
-    metadataBody = serializeArtifactMetadata(createArtifactMetadata(""));
+    // Labeled after the archive itself rather than its extracted paths -
+    // the thing the user actually uploaded was one ZIP.
+    const label = zipFile.name.replace(/\.zip$/i, "");
+    metadataBody = serializeArtifactMetadata(createArtifactMetadata(label));
     const metadataBytes = new TextEncoder().encode(metadataBody).length;
     const combinedFileCount = extracted.length + 1;
     if (combinedFileCount > limits.maxArtifactFileCount) {
