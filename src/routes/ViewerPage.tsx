@@ -108,11 +108,12 @@ export default function ViewerPage() {
     }, [id, routePath, token, reloadToken]);
 
     useEffect(() => {
+        const artifactName = listing?.label || id;
         document.title =
             routePath === ""
-                ? `${id} · Drop Share`
-                : `${id}/${routePath} · Drop Share`;
-    }, [id, routePath]);
+                ? `${artifactName} · Drop Share`
+                : `${artifactName} · Drop Share`;
+    }, [listing?.label, id, routePath]);
 
     useEffect(() => {
         const handleResize = () => {
