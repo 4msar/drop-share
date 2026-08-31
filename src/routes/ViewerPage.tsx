@@ -13,7 +13,6 @@ import {
     pickDefaultPreview,
     sortFiles,
 } from "../lib/artifact";
-import { pluralize } from "../lib/format";
 import { addRecentItem, type RecentItem, getRecentItems } from "../lib/recent";
 import { getStoredToken, saveToken } from "../lib/tokens";
 import { ArchiveIcon, CheckIcon } from "../components/Icons";
@@ -209,18 +208,12 @@ export default function ViewerPage() {
     const subPath = listing.path;
     const isRoot = subPath === "";
     const label = listing.label || id;
-    const title = isRoot ? label : `${label} / ${subPath}`;
-    const meta = [
-        pluralize(files.length, "file"),
-        directories.length > 0 ? pluralize(directories.length, "folder") : null,
-    ]
-        .filter(Boolean)
-        .join(", ");
+    const meta = isRoot ? "" : `/${subPath}`;
 
     return (
         <div className="flex h-dvh flex-col">
             <Header
-                title={title}
+                title={label}
                 meta={meta}
                 currentId={id}
                 recentItems={recentItems}

@@ -97,6 +97,10 @@ export function FileList({
                             type={sortMode === "newest" ? "down" : "up"}
                         />
                     </button>
+
+                    <span className="text-[10px] font-medium lowercase tracking-normal text-body/60">
+                        {files.length + directories.length} items
+                    </span>
                 </div>
             )}
             <ul
