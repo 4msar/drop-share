@@ -14,6 +14,7 @@ import {
 } from "../lib/artifact";
 import { pluralize } from "../lib/format";
 import { addRecentItem, type RecentItem, getRecentItems } from "../lib/recent";
+import { getStoredToken, saveToken } from "../lib/tokens";
 import { ArchiveIcon, CheckIcon } from "../components/Icons";
 import { ProgressBarWithTimeout } from "../components/ProgressBar";
 
@@ -81,6 +82,12 @@ export default function ViewerPage() {
                 setListing(next);
                 setLoadError(null);
                 setRecentItems(addRecentItem(id, undefined, next.label));
+                // A URL can carry a valid token without this browser ever
+                // having locked the artifact itself (e.g. a shared link) -
+                // persist it so the Recent Switcher keeps modify access.
+                if (token && next.canModify && getStoredToken(id) !== token) {
+                    saveToken(id, token);
+                }
             },
             (error: unknown) => {
                 if (cancelled) return;

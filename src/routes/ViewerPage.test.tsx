@@ -633,6 +633,21 @@ describe("token propagation", () => {
         });
     });
 
+    it("saves a valid URL token to localStorage when it isn't already stored", async () => {
+        stubListing({ files: [file("a.txt")], locked: true, canModify: true });
+        await renderViewerEntry(`/a/${ID}/?token=my-token`);
+
+        await waitFor(() => expect(getStoredToken(ID)).toBe("my-token"));
+    });
+
+    it("does not save the URL token when it fails to authorize", async () => {
+        stubListing({ files: [file("a.txt")], locked: true, canModify: false });
+        await renderViewerEntry(`/a/${ID}/?token=wrong-token`);
+
+        await screen.findByText(/a\.txt/);
+        expect(getStoredToken(ID)).toBeNull();
+    });
+
     it("preserves the token in a folder link", async () => {
         stubListing({ directories: ["css/"] });
         await renderViewerEntry(`/a/${ID}/?token=my-token`);
