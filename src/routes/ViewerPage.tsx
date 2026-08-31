@@ -7,6 +7,7 @@ import { PreviewPane } from "../components/PreviewPane";
 import {
     type ArtifactFile,
     type ArtifactListing,
+    type FileSortMode,
     ArtifactNotFoundError,
     fetchArtifactListing,
     pickDefaultPreview,
@@ -34,6 +35,7 @@ export default function ViewerPage() {
     const [actionError, setActionError] = useState<string | null>(null);
     const [reloadToken, setReloadToken] = useState(0);
     const [fileListOpen, setFileListOpen] = useState(true);
+    const [sortMode, setSortMode] = useState<FileSortMode>("newest");
     const [recentItems, setRecentItems] = useState<RecentItem[]>(() =>
         getRecentItems(),
     );
@@ -194,7 +196,7 @@ export default function ViewerPage() {
         );
     }
 
-    const files = sortFiles(listing.files);
+    const files = sortFiles(listing.files, sortMode);
     const selectedFromFiles =
         selectedFromQuery !== null
             ? files.find(
@@ -256,6 +258,8 @@ export default function ViewerPage() {
                     files={files}
                     directories={directories}
                     activeName={selected?.name ?? null}
+                    sortMode={sortMode}
+                    onSortModeChange={setSortMode}
                     onPreview={(file) => setFileQueryParam(file.name, false)}
                     open={fileListOpen}
                     token={token}

@@ -79,6 +79,7 @@ export async function handleArtifactJson(
             return {
                 name: file.name,
                 size: file.size,
+                uploaded: file.uploaded.toISOString(),
                 contentType: file.contentType,
                 // The client renders the viewer now, but the decision about
                 // what is safe to show inline stays here - duplicating that

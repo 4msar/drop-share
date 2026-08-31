@@ -1,5 +1,5 @@
 import { Link } from "react-router";
-import type { ArtifactFile } from "../lib/artifact";
+import type { ArtifactFile, FileSortMode } from "../lib/artifact";
 import { fileUrl, parentPath, withToken } from "../lib/artifact";
 import {
     ARCHIVE_EXTENSIONS,
@@ -9,6 +9,7 @@ import {
 import { cn } from "../lib/utils";
 import {
     ArchiveIcon,
+    ChevronIcon,
     FileIcon,
     FolderIcon,
     ImageIcon,
@@ -54,6 +55,8 @@ interface FileListProps {
     files: ArtifactFile[];
     directories: string[];
     activeName: string | null;
+    sortMode: FileSortMode;
+    onSortModeChange: (mode: FileSortMode) => void;
     onPreview: (file: ArtifactFile) => void;
     open: boolean;
     token: string | null;
@@ -65,6 +68,8 @@ export function FileList({
     files,
     directories,
     activeName,
+    sortMode,
+    onSortModeChange,
     onPreview,
     open,
     token,
@@ -76,6 +81,24 @@ export function FileList({
             aria-label="Files in this artifact"
             className={`relative overflow-hidden border-edge transition-[max-height,width] duration-200 ease-out ${open ? "overflow-x-visible overflow-y-auto max-md:max-h-[25vh] max-md:border-b md:border-r" : "max-md:max-h-0 max-md:border-b md:w-9 md:border-r"}`}
         >
+            {open && (
+                <div className="flex items-center justify-between border-b border-edge px-2 py-2">
+                    <button
+                        className="text-[10px] font-medium uppercase tracking-[0.18em] text-body/60 flex items-center gap-1 transition-all hover:text-brand focus-visible:text-brand focus-visible:outline-none"
+                        onClick={() =>
+                            onSortModeChange(
+                                sortMode === "newest" ? "name" : "newest",
+                            )
+                        }
+                        title={`Sort by ${sortMode === "newest" ? "newest" : "name (a-z)"}`}
+                    >
+                        <span>Files</span>
+                        <ChevronIcon
+                            type={sortMode === "newest" ? "down" : "up"}
+                        />
+                    </button>
+                </div>
+            )}
             <ul
                 className={`flex flex-col gap-1 p-2 transition-opacity duration-200 ease-out ${open ? "opacity-100" : "pointer-events-none opacity-0"}`}
             >
@@ -84,7 +107,10 @@ export function FileList({
                         <span aria-hidden="true">
                             <FolderIcon className="size-4" />
                         </span>
-                        <Link className={NAME} to={withToken(`/a/${id}/${parent}`, token)}>
+                        <Link
+                            className={NAME}
+                            to={withToken(`/a/${id}/${parent}`, token)}
+                        >
                             .. (parent directory)
                         </Link>
                     </li>
@@ -93,7 +119,10 @@ export function FileList({
                 {directories.map((dir) => (
                     <li key={dir} className={ROW}>
                         <ParentFolderIcon className="size-4" />
-                        <Link className={NAME} to={withToken(`/a/${id}/${subPath}${dir}`, token)}>
+                        <Link
+                            className={NAME}
+                            to={withToken(`/a/${id}/${subPath}${dir}`, token)}
+                        >
                             {dir}
                         </Link>
                         <OpenInTab
@@ -142,7 +171,6 @@ export function FileList({
                     );
                 })}
             </ul>
-
             {!open && (
                 <div
                     aria-hidden="true"

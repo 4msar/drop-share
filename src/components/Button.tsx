@@ -2,7 +2,7 @@ import type { ButtonHTMLAttributes } from "react";
 import { cn } from "../lib/utils";
 
 export type ButtonVariant = "primary" | "secondary" | "link" | "danger";
-export type ButtonSize = "sm" | "lg";
+export type ButtonSize = "xs" | "sm" | "lg";
 
 const BASE =
     "inline-flex items-center justify-center font-sans whitespace-nowrap cursor-pointer " +
@@ -20,6 +20,7 @@ const VARIANTS: Record<ButtonVariant, string> = {
 };
 
 const SIZES: Record<ButtonSize, string> = {
+    xs: "px-2 py-1 text-[11px]",
     sm: "px-4 py-2 text-[13px]",
     lg: "px-7 py-3.5 text-base",
 };
