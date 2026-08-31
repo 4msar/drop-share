@@ -124,9 +124,10 @@ export function Header({
             } finally {
                 setUploading(false);
                 if (uploadInputRef.current) uploadInputRef.current.value = "";
+                delayedAction();
             }
         },
-        [currentId, onError, onReload, subPath, token],
+        [currentId, onError, onReload, delayedAction, subPath, token],
     );
 
     const onLock = useCallback(async () => {
@@ -145,7 +146,9 @@ export function Header({
             onLocked(newToken);
         } catch (error) {
             onError(
-                error instanceof Error ? error.message : "Failed to lock artifact.",
+                error instanceof Error
+                    ? error.message
+                    : "Failed to lock artifact.",
             );
         } finally {
             setLocking(false);
@@ -279,13 +282,14 @@ export function Header({
                                         type="button"
                                         disabled={uploading}
                                         onClick={() => {
-                                            delayedAction();
                                             uploadInputRef.current?.click();
                                         }}
                                         className="flex h-8 w-full items-center gap-2 rounded-md px-2.5 text-left text-xs text-heading hover:bg-brand-soft disabled:opacity-60"
                                     >
                                         <UploadIcon className="size-3.5 shrink-0" />
-                                        {uploading ? "Uploading…" : "Upload more"}
+                                        {uploading
+                                            ? "Uploading…"
+                                            : "Upload more"}
                                     </button>
                                 )}
                                 {!locked && (
