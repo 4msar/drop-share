@@ -1,6 +1,8 @@
-import { toggleDocumentTheme } from "../lib/theme";
+import { useThemeActions } from "../contexts/useTheme";
 
 export const Footer = () => {
+    const { toggleTheme } = useThemeActions();
+
     return (
         <footer className="mt-5 text-center text-[10px] text-body">
             <p className="flex items-center justify-center gap-1">
@@ -43,7 +45,7 @@ export const Footer = () => {
                 |
                 <button
                     className="text-body cursor-pointer"
-                    onClick={() => toggleDocumentTheme()}
+                    onClick={toggleTheme}
                     title="Toggle theme"
                 >
                     <svg

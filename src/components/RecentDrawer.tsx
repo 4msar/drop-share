@@ -1,18 +1,21 @@
 import { useState } from "react";
-import { clearRecentItems, getRecentItems } from "../lib/recent";
 import { RecentList } from "./RecentList";
 import { ChevronIcon } from "./Icons";
 import { cn } from "../lib/utils";
+import {
+    useRecentItems,
+    useRecentItemsActions,
+} from "../contexts/useRecentItems";
 
 /** A chevron pinned to the right edge that slides out recently viewed artifacts. */
 export function RecentDrawer() {
     const [open, setOpen] = useState(false);
-    const [items, setItems] = useState(() => getRecentItems());
+    const items = useRecentItems();
+    const { clearItems } = useRecentItemsActions();
 
     const handleClearRecentItems = () => {
-        clearRecentItems();
+        clearItems();
         setOpen(false);
-        setItems([]);
     };
 
     if (items.length === 0) return null;

@@ -4,12 +4,10 @@ import { Modal } from "./Modal";
 import { lockArtifact } from "../lib/artifact";
 import { hashPassword } from "../lib/hash";
 import { saveToken } from "../lib/tokens";
+import { useArtifactActions, useArtifactState } from "../contexts/useArtifact";
 
 interface LockDialogProps {
-    artifactId: string;
     onClose: () => void;
-    onLocked: (token: string) => void;
-    onError: (message: string | null) => void;
 }
 
 /**
@@ -18,12 +16,9 @@ interface LockDialogProps {
  * own form state; only mounted while the dialog is open, so closing and
  * reopening it starts from a blank form for free.
  */
-export function LockDialog({
-    artifactId,
-    onClose,
-    onLocked,
-    onError,
-}: LockDialogProps) {
+export function LockDialog({ onClose }: LockDialogProps) {
+    const { id: artifactId } = useArtifactState();
+    const { tokenObtained, reportError } = useArtifactActions();
     const [password, setPassword] = useState("");
     const [passwordConfirm, setPasswordConfirm] = useState("");
     const [locking, setLocking] = useState(false);
@@ -31,23 +26,23 @@ export function LockDialog({
 
     async function handleSubmit() {
         if (password === "") {
-            onError("A password is required to lock this artifact.");
+            reportError("A password is required to lock this artifact.");
             return;
         }
         if (password !== passwordConfirm) {
-            onError("Passwords do not match.");
+            reportError("Passwords do not match.");
             return;
         }
         setLocking(true);
-        onError(null);
+        reportError(null);
         try {
             const token = await hashPassword(artifactId, password);
             await lockArtifact(artifactId, token);
             saveToken(artifactId, token);
             setLocked(true);
-            onLocked(token);
+            tokenObtained(token);
         } catch (error) {
-            onError(
+            reportError(
                 error instanceof Error
                     ? error.message
                     : "Failed to lock artifact.",

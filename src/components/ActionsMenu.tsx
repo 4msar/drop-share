@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Button } from "./Button";
 import { LockDialog } from "./LockDialog";
 import { UnlockDialog } from "./UnlockDialog";
+import { useArtifactState } from "../contexts/useArtifact";
 import {
     ActionIcon,
     EditIcon,
@@ -10,20 +11,13 @@ import {
     TrashIcon,
     UploadIcon,
 } from "./Icons";
-import { useParams } from "react-router";
 
 interface ActionsMenuProps {
-    subPath: string;
-    isRoot: boolean;
-    canModify: boolean;
-    locked: boolean;
     renaming: boolean;
     onRename: () => void;
     uploading: boolean;
     onUpload: () => void;
     onDelete: () => void;
-    onTokenObtained: (token: string) => void;
-    onError: (message: string | null) => void;
 }
 
 const MENU_CLOSE_DELAY_MS = 1000;
@@ -36,25 +30,18 @@ const ITEM =
 /**
  * The header's "more actions" dropdown - fully self-contained. It owns its
  * own open/close state, the Share button's copy-feedback state, and the
- * Lock/Unlock dialogs it triggers; the parent only supplies artifact data
- * and the handful of actions (rename/upload/delete) whose results have to
- * be visible outside the menu.
+ * Lock/Unlock dialogs it triggers; the parent only supplies the handful of
+ * actions (rename/upload/delete) whose results have to be visible outside
+ * the menu.
  */
 export function ActionsMenu({
-    subPath,
-    isRoot,
-    canModify,
-    locked,
     renaming,
     onRename,
     uploading,
     onUpload,
     onDelete,
-    onTokenObtained,
-    onError,
 }: ActionsMenuProps) {
-    const params = useParams();
-    const currentId = params.id ?? "";
+    const { isRoot, canModify, locked } = useArtifactState();
     const [open, setOpen] = useState(false);
     const [shareLabel, setShareLabel] = useState("Share");
     const [lockDialogOpen, setLockDialogOpen] = useState(false);
@@ -182,22 +169,11 @@ export function ActionsMenu({
             )}
 
             {lockDialogOpen && (
-                <LockDialog
-                    artifactId={currentId}
-                    onClose={() => setLockDialogOpen(false)}
-                    onLocked={onTokenObtained}
-                    onError={onError}
-                />
+                <LockDialog onClose={() => setLockDialogOpen(false)} />
             )}
 
             {unlockDialogOpen && (
-                <UnlockDialog
-                    artifactId={currentId}
-                    subPath={subPath}
-                    onClose={() => setUnlockDialogOpen(false)}
-                    onUnlocked={onTokenObtained}
-                    onError={onError}
-                />
+                <UnlockDialog onClose={() => setUnlockDialogOpen(false)} />
             )}
         </div>
     );

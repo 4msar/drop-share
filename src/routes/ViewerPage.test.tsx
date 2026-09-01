@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { AppProviders } from "../contexts/AppProviders";
 import type { ArtifactFile } from "../lib/artifact";
 import { hashPassword } from "../lib/hash";
 import { addRecentItem, getRecentItems } from "../lib/recent";
@@ -151,12 +152,14 @@ async function renderViewer(subPath = "") {
   }
 
   render(
-    <MemoryRouter initialEntries={[`/a/${ID}/${subPath}`]}>
-      <Routes>
-        <Route path="/a/:id/*" element={<ViewerPage />} />
-      </Routes>
-      <LocationProbe />
-    </MemoryRouter>,
+    <AppProviders>
+      <MemoryRouter initialEntries={[`/a/${ID}/${subPath}`]}>
+        <Routes>
+          <Route path="/a/:id/*" element={<ViewerPage />} />
+        </Routes>
+        <LocationProbe />
+      </MemoryRouter>
+    </AppProviders>,
   );
   await waitFor(() => expect(screen.queryByText("Loading…")).toBeNull());
 }
@@ -168,12 +171,14 @@ async function renderViewerEntry(entry: string) {
   }
 
   render(
-    <MemoryRouter initialEntries={[entry]}>
-      <Routes>
-        <Route path="/a/:id/*" element={<ViewerPage />} />
-      </Routes>
-      <LocationProbe />
-    </MemoryRouter>,
+    <AppProviders>
+      <MemoryRouter initialEntries={[entry]}>
+        <Routes>
+          <Route path="/a/:id/*" element={<ViewerPage />} />
+        </Routes>
+        <LocationProbe />
+      </MemoryRouter>
+    </AppProviders>,
   );
   await waitFor(() => expect(screen.queryByText("Loading…")).toBeNull());
 }
@@ -993,11 +998,13 @@ describe("failure states", () => {
       ),
     );
     render(
-      <MemoryRouter initialEntries={[`/a/${ID}/`]}>
-        <Routes>
-          <Route path="/a/:id/*" element={<ViewerPage />} />
-        </Routes>
-      </MemoryRouter>,
+      <AppProviders>
+        <MemoryRouter initialEntries={[`/a/${ID}/`]}>
+          <Routes>
+            <Route path="/a/:id/*" element={<ViewerPage />} />
+          </Routes>
+        </MemoryRouter>
+      </AppProviders>,
     );
     expect(
       await screen.findByText(/doesn't exist, or was deleted/i),

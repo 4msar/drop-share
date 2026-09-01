@@ -7,49 +7,21 @@ import {
     updateArtifactLabel,
     uploadIntoArtifact,
 } from "../lib/artifact";
-import { removeRecentItem } from "../lib/recent";
-import type { RecentItem } from "../lib/recent";
-import { toggleDocumentTheme } from "../lib/theme";
+import { useArtifactActions, useArtifactState } from "../contexts/useArtifact";
+import { useRecentItemsActions } from "../contexts/useRecentItems";
+import { useThemeActions } from "../contexts/useTheme";
 import { removeToken } from "../lib/tokens";
 import { Button } from "./Button";
 import { ThemeIcon } from "./Icons";
 
 const DELETED_REDIRECT_DELAY_MS = 3000;
 
-interface HeaderProps {
-    title: string;
-    meta: string;
-    currentId: string;
-    subPath: string;
-    recentItems: RecentItem[];
-    isRoot: boolean;
-    locked: boolean;
-    canModify: boolean;
-    label?: string;
-    token: string | null;
-    onDeleted: () => void;
-    onReload: () => void;
-    onError: (message: string | null) => void;
-    onTokenObtained: (token: string) => void;
-}
-
-export function Header({
-    title,
-    meta,
-    currentId,
-    subPath,
-    recentItems,
-    isRoot,
-    locked,
-    canModify,
-    label,
-    token,
-    onDeleted,
-    onReload,
-    onError,
-    onTokenObtained,
-}: HeaderProps) {
+export function Header() {
     const navigate = useNavigate();
+    const { id: currentId, subPath, isRoot, label, token } = useArtifactState();
+    const { reload, reportError, markDeleted } = useArtifactActions();
+    const { removeItem } = useRecentItemsActions();
+    const { toggleTheme } = useThemeActions();
     const [uploading, setUploading] = useState(false);
     const [renaming, setRenaming] = useState(false);
     const uploadInputRef = useRef<HTMLInputElement>(null);
@@ -63,15 +35,15 @@ export function Header({
             return;
         try {
             await deleteArtifact(currentId, token);
-            removeRecentItem(currentId);
+            removeItem(currentId);
             removeToken(currentId);
-            onDeleted();
+            markDeleted();
             window.setTimeout(
                 () => void navigate("/"),
                 DELETED_REDIRECT_DELAY_MS,
             );
         } catch (error) {
-            onError(
+            reportError(
                 error instanceof Error
                     ? error.message
                     : "Failed to delete artifact.",
@@ -82,12 +54,14 @@ export function Header({
     async function onUploadFiles(files: File[]) {
         if (files.length === 0) return;
         setUploading(true);
-        onError(null);
+        reportError(null);
         try {
             await uploadIntoArtifact(currentId, subPath, files, token);
-            onReload();
+            reload();
         } catch (error) {
-            onError(error instanceof Error ? error.message : "Upload failed.");
+            reportError(
+                error instanceof Error ? error.message : "Upload failed.",
+            );
         } finally {
             setUploading(false);
             if (uploadInputRef.current) uploadInputRef.current.value = "";
@@ -100,12 +74,12 @@ export function Header({
         const trimmed = next.trim();
         if (trimmed === "" || trimmed === label) return;
         setRenaming(true);
-        onError(null);
+        reportError(null);
         try {
             await updateArtifactLabel(currentId, trimmed, token);
-            onReload();
+            reload();
         } catch (error) {
-            onError(
+            reportError(
                 error instanceof Error
                     ? error.message
                     : "Failed to rename artifact.",
@@ -114,6 +88,9 @@ export function Header({
             setRenaming(false);
         }
     }
+
+    const title = label || currentId;
+    const meta = isRoot ? "" : `/${subPath}`;
 
     return (
         <header className="relative z-20 flex h-9 shrink-0 items-center justify-between border-b border-edge bg-surface px-2">
@@ -125,11 +102,7 @@ export function Header({
                 >
                     <img src="/logo.svg" alt="" className="size-5" />
                 </Link>
-                <RecentSwitcher
-                    title={title}
-                    currentId={currentId}
-                    items={recentItems}
-                />
+                <RecentSwitcher title={title} />
                 <span className="hidden truncate text-xs text-body sm:inline">
                     {meta}
                 </span>
@@ -143,32 +116,24 @@ export function Header({
                     hidden
                     aria-label="Add files to this folder"
                     onChange={(event) => {
-                        void onUploadFiles(
-                            Array.from(event.target.files ?? []),
-                        );
+                        void onUploadFiles(Array.from(event.target.files ?? []));
                     }}
                 />
                 <Button
                     type="button"
                     aria-label="Toggle theme"
                     title="Toggle theme"
-                    onClick={() => toggleDocumentTheme()}
+                    onClick={toggleTheme}
                     className="size-7 text-base text-heading p-0"
                 >
                     <ThemeIcon className="size-3" />
                 </Button>
                 <ActionsMenu
-                    subPath={subPath}
-                    isRoot={isRoot}
-                    canModify={canModify}
-                    locked={locked}
                     renaming={renaming}
                     onRename={() => void onRename()}
                     uploading={uploading}
                     onUpload={() => uploadInputRef.current?.click()}
                     onDelete={() => void onDelete()}
-                    onTokenObtained={onTokenObtained}
-                    onError={onError}
                 />
             </div>
         </header>

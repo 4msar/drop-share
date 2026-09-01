@@ -1,20 +1,17 @@
 import { useState } from "react";
-import type { RecentItem } from "../lib/recent";
 import { RecentList } from "./RecentList";
 import { ChevronIcon } from "./Icons";
+import { useArtifactState } from "../contexts/useArtifact";
+import { useRecentItems } from "../contexts/useRecentItems";
 
 interface RecentSwitcherProps {
     title: string;
-    currentId: string;
-    items: RecentItem[];
 }
 
 /** A dropdown next to the viewer title for jumping between recently viewed artifacts. */
-export function RecentSwitcher({
-    title,
-    currentId,
-    items,
-}: RecentSwitcherProps) {
+export function RecentSwitcher({ title }: RecentSwitcherProps) {
+    const { id: currentId } = useArtifactState();
+    const items = useRecentItems();
     const [open, setOpen] = useState(false);
 
     return (

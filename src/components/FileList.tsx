@@ -7,6 +7,7 @@ import {
     IMAGE_EXTENSIONS,
 } from "../lib/format";
 import { cn } from "../lib/utils";
+import { useArtifactState } from "../contexts/useArtifact";
 import {
     ArchiveIcon,
     ChevronIcon,
@@ -50,8 +51,6 @@ function OpenInTab({ href, label }: { href: string; label: string }) {
 }
 
 interface FileListProps {
-    id: string;
-    subPath: string;
     files: ArtifactFile[];
     directories: string[];
     activeName: string | null;
@@ -59,12 +58,9 @@ interface FileListProps {
     onSortModeChange: (mode: FileSortMode) => void;
     onPreview: (file: ArtifactFile) => void;
     open: boolean;
-    token: string | null;
 }
 
 export function FileList({
-    id,
-    subPath,
     files,
     directories,
     activeName,
@@ -72,8 +68,8 @@ export function FileList({
     onSortModeChange,
     onPreview,
     open,
-    token,
 }: FileListProps) {
+    const { id, subPath, token } = useArtifactState();
     const parent = parentPath(subPath);
 
     return (

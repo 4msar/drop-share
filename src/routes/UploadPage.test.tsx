@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { AppProviders } from "../contexts/AppProviders";
 import { addRecentItem } from "../lib/recent";
 import type { SelectedFile, UploadMode } from "../lib/upload";
 import UploadPage from "./UploadPage";
@@ -33,9 +34,11 @@ function choose(label: string, files: File[]) {
 
 function renderPage() {
   render(
-    <MemoryRouter>
-      <UploadPage />
-    </MemoryRouter>,
+    <AppProviders>
+      <MemoryRouter>
+        <UploadPage />
+      </MemoryRouter>
+    </AppProviders>,
   );
 }
 

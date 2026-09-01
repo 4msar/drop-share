@@ -1,4 +1,5 @@
 import { BrowserRouter, Route, Routes } from "react-router";
+import { AppProviders } from "./contexts/AppProviders";
 import UploadPage from "./routes/UploadPage";
 import ViewerPage from "./routes/ViewerPage";
 
@@ -10,11 +11,13 @@ import ViewerPage from "./routes/ViewerPage";
  */
 export default function App() {
   return (
-    <BrowserRouter>
-      <Routes>
-        <Route path="/" element={<UploadPage />} />
-        <Route path="/a/:id/*" element={<ViewerPage />} />
-      </Routes>
-    </BrowserRouter>
+    <AppProviders>
+      <BrowserRouter>
+        <Routes>
+          <Route path="/" element={<UploadPage />} />
+          <Route path="/a/:id/*" element={<ViewerPage />} />
+        </Routes>
+      </BrowserRouter>
+    </AppProviders>
   );
 }

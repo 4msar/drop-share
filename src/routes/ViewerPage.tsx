@@ -6,41 +6,62 @@ import { Header } from "../components/Header";
 import { PreviewPane } from "../components/PreviewPane";
 import {
     type ArtifactFile,
-    type ArtifactListing,
     type FileSortMode,
-    ArtifactNotFoundError,
-    fetchArtifactListing,
     pickDefaultPreview,
     sortFiles,
 } from "../lib/artifact";
-import { addRecentItem, type RecentItem, getRecentItems } from "../lib/recent";
-import { getStoredToken, saveToken } from "../lib/tokens";
 import { ArchiveIcon, CheckIcon } from "../components/Icons";
 import { ProgressBarWithTimeout } from "../components/ProgressBar";
 import { ErrorToast } from "../components/ErrorToast";
+import { ArtifactProvider } from "../contexts/ArtifactProvider";
+import { useArtifactActions, useArtifactState } from "../contexts/useArtifact";
 
 export default function ViewerPage() {
     const params = useParams();
-    const navigate = useNavigate();
     const [searchParams, setSearchParams] = useSearchParams();
     const id = params.id ?? "";
     // The route's path is what we fetch; what we *render* comes from the
-    // listing itself (see `subPath` below), so a folder navigation can never
-    // pair the new path with the previous folder's file names.
+    // listing itself (ArtifactProvider's `subPath`), so a folder navigation
+    // can never pair the new path with the previous folder's file names.
     const routePath = params["*"] ?? "";
+    const token = searchParams.get("token");
 
-    const [listing, setListing] = useState<ArtifactListing | null>(null);
-    const [loadError, setLoadError] = useState<string | null>(null);
-    const [deleted, setDeleted] = useState(false);
-    const [actionError, setActionError] = useState<string | null>(null);
-    const [reloadToken, setReloadToken] = useState(0);
+    // Locking and unlocking both end with this browser holding a fresh,
+    // valid token, so it's folded into the URL immediately - ArtifactProvider's
+    // fetch effect then refetches the listing with it and canModify flips
+    // to true.
+    const onTokenChange = (newToken: string) => {
+        setSearchParams(
+            (current) => {
+                const next = new URLSearchParams(current);
+                next.set("token", newToken);
+                return next;
+            },
+            { replace: true },
+        );
+    };
+
+    return (
+        <ArtifactProvider
+            id={id}
+            routePath={routePath}
+            token={token}
+            onTokenChange={onTokenChange}
+        >
+            <ViewerPageContent />
+        </ArtifactProvider>
+    );
+}
+
+function ViewerPageContent() {
+    const navigate = useNavigate();
+    const [searchParams, setSearchParams] = useSearchParams();
+    const { id, listing, loadError, actionError, deleted } =
+        useArtifactState();
+    const { reportError } = useArtifactActions();
     const [fileListOpen, setFileListOpen] = useState(true);
     const [sortMode, setSortMode] = useState<FileSortMode>("newest");
-    const [recentItems, setRecentItems] = useState<RecentItem[]>(() =>
-        getRecentItems(),
-    );
     const selectedFromQuery = searchParams.get("file");
-    const token = searchParams.get("token");
 
     const setFileQueryParam = (name: string | null, replace = true) => {
         setSearchParams(
@@ -56,56 +77,6 @@ export default function ViewerPage() {
             { replace },
         );
     };
-
-    // Locking and unlocking both end with this browser holding a fresh,
-    // valid token, so it's folded into the URL immediately - the effect
-    // below then refetches the listing with it and canModify flips to true.
-    const onTokenObtained = (newToken: string) => {
-        setSearchParams(
-            (current) => {
-                const next = new URLSearchParams(current);
-                next.set("token", newToken);
-                return next;
-            },
-            { replace: true },
-        );
-    };
-
-    useEffect(() => {
-        // `cancelled` matters because navigating between folders quickly can leave
-        // an earlier request in flight; without it a slow response for the folder
-        // you just left can overwrite the one you are now looking at.
-        let cancelled = false;
-
-        fetchArtifactListing(id, routePath, token).then(
-            (next) => {
-                if (cancelled) return;
-                setListing(next);
-                setLoadError(null);
-                setRecentItems(addRecentItem(id, undefined, next.label));
-                // A URL can carry a valid token without this browser ever
-                // having locked the artifact itself (e.g. a shared link) -
-                // persist it so the Recent Switcher keeps modify access.
-                if (token && next.canModify && getStoredToken(id) !== token) {
-                    saveToken(id, token);
-                }
-            },
-            (error: unknown) => {
-                if (cancelled) return;
-                setListing(null);
-                setLoadError(
-                    error instanceof ArtifactNotFoundError ||
-                        error instanceof Error
-                        ? error.message
-                        : "Could not load this artifact.",
-                );
-            },
-        );
-
-        return () => {
-            cancelled = true;
-        };
-    }, [id, routePath, token, reloadToken]);
 
     useEffect(() => {
         const artifactName = listing?.label || id;
@@ -203,34 +174,15 @@ export default function ViewerPage() {
     const selected: ArtifactFile | null =
         selectedFromFiles ?? pickDefaultPreview(files);
     const directories = listing.directories.slice().sort();
-    const subPath = listing.path;
-    const isRoot = subPath === "";
-    const label = listing.label || id;
-    const meta = isRoot ? "" : `/${subPath}`;
 
     return (
         <div className="flex h-dvh flex-col">
-            <Header
-                title={label}
-                meta={meta}
-                currentId={id}
-                recentItems={recentItems}
-                isRoot={isRoot}
-                subPath={subPath}
-                locked={listing.locked}
-                canModify={listing.canModify}
-                label={listing.label}
-                token={token}
-                onDeleted={() => setDeleted(true)}
-                onReload={() => setReloadToken((count) => count + 1)}
-                onError={setActionError}
-                onTokenObtained={onTokenObtained}
-            />
+            <Header />
 
             {actionError !== null && (
                 <ErrorToast
                     message={actionError}
-                    onClose={() => setActionError(null)}
+                    onClose={() => reportError(null)}
                 />
             )}
 
@@ -242,8 +194,6 @@ export default function ViewerPage() {
                 }`}
             >
                 <FileList
-                    id={id}
-                    subPath={subPath}
                     files={files}
                     directories={directories}
                     activeName={selected?.name ?? null}
@@ -251,11 +201,8 @@ export default function ViewerPage() {
                     onSortModeChange={setSortMode}
                     onPreview={(file) => setFileQueryParam(file.name, false)}
                     open={fileListOpen}
-                    token={token}
                 />
                 <PreviewPane
-                    id={id}
-                    subPath={subPath}
                     files={files}
                     selected={selected}
                     sidebarOpen={fileListOpen}

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Button } from "./Button";
 import { type ArtifactFile, fileUrl, previewUrl } from "../lib/artifact";
+import { useArtifactState } from "../contexts/useArtifact";
 import {
     ChevronIcon,
     CodeIcon,
@@ -11,8 +12,6 @@ import {
 import { cn } from "../lib/utils";
 
 interface PreviewPaneProps {
-    id: string;
-    subPath: string;
     files: ArtifactFile[];
     selected: ArtifactFile | null;
     sidebarOpen: boolean;
@@ -20,13 +19,12 @@ interface PreviewPaneProps {
 }
 
 export function PreviewPane({
-    id,
-    subPath,
     files,
     selected,
     sidebarOpen,
     onToggle,
 }: PreviewPaneProps) {
+    const { id, subPath } = useArtifactState();
     const sectionRef = useRef<HTMLElement | null>(null);
     const [sourceMode, setSourceMode] = useState<{
         fileName: string;

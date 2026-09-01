@@ -4,13 +4,10 @@ import { Modal } from "./Modal";
 import { fetchArtifactListing } from "../lib/artifact";
 import { hashPassword } from "../lib/hash";
 import { saveToken } from "../lib/tokens";
+import { useArtifactActions, useArtifactState } from "../contexts/useArtifact";
 
 interface UnlockDialogProps {
-    artifactId: string;
-    subPath: string;
     onClose: () => void;
-    onUnlocked: (token: string) => void;
-    onError: (message: string | null) => void;
 }
 
 /**
@@ -20,23 +17,19 @@ interface UnlockDialogProps {
  * existing read path. Owns its own form state; only mounted while the
  * dialog is open.
  */
-export function UnlockDialog({
-    artifactId,
-    subPath,
-    onClose,
-    onUnlocked,
-    onError,
-}: UnlockDialogProps) {
+export function UnlockDialog({ onClose }: UnlockDialogProps) {
+    const { id: artifactId, subPath } = useArtifactState();
+    const { tokenObtained, reportError } = useArtifactActions();
     const [password, setPassword] = useState("");
     const [unlocking, setUnlocking] = useState(false);
 
     async function handleSubmit() {
         if (password === "") {
-            onError("A password is required to unlock this artifact.");
+            reportError("A password is required to unlock this artifact.");
             return;
         }
         setUnlocking(true);
-        onError(null);
+        reportError(null);
         try {
             const candidateToken = await hashPassword(artifactId, password);
             const listing = await fetchArtifactListing(
@@ -45,14 +38,14 @@ export function UnlockDialog({
                 candidateToken,
             );
             if (!listing.canModify) {
-                onError("Incorrect password.");
+                reportError("Incorrect password.");
                 return;
             }
             saveToken(artifactId, candidateToken);
-            onUnlocked(candidateToken);
+            tokenObtained(candidateToken);
             onClose();
         } catch (error) {
-            onError(
+            reportError(
                 error instanceof Error
                     ? error.message
                     : "Failed to unlock artifact.",
