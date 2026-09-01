@@ -1,8 +1,6 @@
 import { useRef, useState } from "react";
 import { Link, useNavigate } from "react-router";
 import { ActionsMenu } from "./ActionsMenu";
-import { LockDialog } from "./LockDialog";
-import { UnlockDialog } from "./UnlockDialog";
 import { RecentSwitcher } from "./RecentSwitcher";
 import {
     deleteArtifact,
@@ -17,8 +15,6 @@ import { Button } from "./Button";
 import { ThemeIcon } from "./Icons";
 
 const DELETED_REDIRECT_DELAY_MS = 3000;
-const COPY_FEEDBACK_MS = 1500;
-const MENU_CLOSE_DELAY_MS = 1000;
 
 interface HeaderProps {
     title: string;
@@ -54,34 +50,9 @@ export function Header({
     onTokenObtained,
 }: HeaderProps) {
     const navigate = useNavigate();
-    const [actionsOpen, setActionsOpen] = useState(false);
     const [uploading, setUploading] = useState(false);
     const [renaming, setRenaming] = useState(false);
-    const [lockDialogOpen, setLockDialogOpen] = useState(false);
-    const [unlockDialogOpen, setUnlockDialogOpen] = useState(false);
-    const [shareLabel, setShareLabel] = useState("Share");
     const uploadInputRef = useRef<HTMLInputElement>(null);
-
-    // Menu actions close the dropdown shortly after firing rather than
-    // immediately, so the click's visual feedback (e.g. a disabled/label
-    // change) is still visible when the menu disappears.
-    function closeActionsMenuSoon() {
-        window.setTimeout(() => setActionsOpen(false), MENU_CLOSE_DELAY_MS);
-    }
-
-    async function onShare() {
-        try {
-            const currentUrl = new URL(window.location.href);
-            if (currentUrl.searchParams.has("token")) {
-                currentUrl.searchParams.delete("token");
-            }
-            await navigator.clipboard.writeText(currentUrl.href);
-            setShareLabel("Copied!");
-        } catch {
-            setShareLabel("Copy failed");
-        }
-        window.setTimeout(() => setShareLabel("Share"), COPY_FEEDBACK_MS);
-    }
 
     async function onDelete() {
         if (
@@ -120,7 +91,6 @@ export function Header({
         } finally {
             setUploading(false);
             if (uploadInputRef.current) uploadInputRef.current.value = "";
-            closeActionsMenuSoon();
         }
     }
 
@@ -173,7 +143,9 @@ export function Header({
                     hidden
                     aria-label="Add files to this folder"
                     onChange={(event) => {
-                        void onUploadFiles(Array.from(event.target.files ?? []));
+                        void onUploadFiles(
+                            Array.from(event.target.files ?? []),
+                        );
                     }}
                 />
                 <Button
@@ -186,57 +158,19 @@ export function Header({
                     <ThemeIcon className="size-3" />
                 </Button>
                 <ActionsMenu
-                    open={actionsOpen}
-                    onToggle={() => setActionsOpen((open) => !open)}
-                    onRequestClose={() => setActionsOpen(false)}
-                    shareLabel={shareLabel}
-                    onShare={() => {
-                        closeActionsMenuSoon();
-                        void onShare();
-                    }}
+                    subPath={subPath}
                     isRoot={isRoot}
                     canModify={canModify}
+                    locked={locked}
                     renaming={renaming}
-                    onRename={() => {
-                        closeActionsMenuSoon();
-                        void onRename();
-                    }}
+                    onRename={() => void onRename()}
                     uploading={uploading}
                     onUpload={() => uploadInputRef.current?.click()}
-                    locked={locked}
-                    onOpenLock={() => {
-                        closeActionsMenuSoon();
-                        setLockDialogOpen(true);
-                    }}
-                    onOpenUnlock={() => {
-                        closeActionsMenuSoon();
-                        setUnlockDialogOpen(true);
-                    }}
-                    onDelete={() => {
-                        closeActionsMenuSoon();
-                        void onDelete();
-                    }}
+                    onDelete={() => void onDelete()}
+                    onTokenObtained={onTokenObtained}
+                    onError={onError}
                 />
             </div>
-
-            {lockDialogOpen && (
-                <LockDialog
-                    artifactId={currentId}
-                    onClose={() => setLockDialogOpen(false)}
-                    onLocked={onTokenObtained}
-                    onError={onError}
-                />
-            )}
-
-            {unlockDialogOpen && (
-                <UnlockDialog
-                    artifactId={currentId}
-                    subPath={subPath}
-                    onClose={() => setUnlockDialogOpen(false)}
-                    onUnlocked={onTokenObtained}
-                    onError={onError}
-                />
-            )}
         </header>
     );
 }
