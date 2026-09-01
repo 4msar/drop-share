@@ -53,19 +53,18 @@ export function createArtifactMetadata(
  * listings), so this is a heuristic, not a contract:
  *  - one file: that file's own path.
  *  - every file shares one top-level folder: that folder's name.
- *  - otherwise (loose files with no common folder): the file name without extension.
+ *  - otherwise (loose files with no common folder): the file count, e.g. "2 files".
  */
 export function deriveArtifactLabel(paths: string[]): string {
     if (paths.length === 0) return "";
-
-    if (paths.length === 1) return getNameWithoutExtension(paths[0]);
+    if (paths.length === 1) return paths[0];
 
     const topLevelFolderName = paths[0].split("/")[0];
     if (paths.every((path) => path.startsWith(`${topLevelFolderName}/`))) {
         return topLevelFolderName;
     }
 
-    return getNameWithoutExtension(paths[0]);
+    return `${paths.length} files`;
 }
 
 export function getNameWithoutExtension(path: string): string {

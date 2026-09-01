@@ -56,8 +56,7 @@ export default function ViewerPage() {
 function ViewerPageContent() {
     const navigate = useNavigate();
     const [searchParams, setSearchParams] = useSearchParams();
-    const { id, listing, loadError, actionError, deleted } =
-        useArtifactState();
+    const { id, listing, loadError, actionError, deleted } = useArtifactState();
     const { reportError } = useArtifactActions();
     const [fileListOpen, setFileListOpen] = useState(true);
     const [sortMode, setSortMode] = useState<FileSortMode>("newest");
@@ -179,13 +178,6 @@ function ViewerPageContent() {
         <div className="flex h-dvh flex-col">
             <Header />
 
-            {actionError !== null && (
-                <ErrorToast
-                    message={actionError}
-                    onClose={() => reportError(null)}
-                />
-            )}
-
             <div
                 className={`grid min-h-0 flex-1 transition-[grid-template-columns,grid-template-rows] duration-200 ease-out max-md:grid-rows-[auto_1fr] ${
                     fileListOpen
@@ -209,6 +201,13 @@ function ViewerPageContent() {
                     onToggle={() => setFileListOpen((open) => !open)}
                 />
             </div>
+
+            {actionError !== null && (
+                <ErrorToast
+                    message={actionError}
+                    onClose={() => reportError(null)}
+                />
+            )}
         </div>
     );
 }
