@@ -37,3 +37,13 @@ export function toggleTheme(
     root.classList.add(next);
     return next;
 }
+
+/** Flips the document's rendered scheme and syncs `color-scheme` to match. */
+export function toggleDocumentTheme(): "dark" | "light" {
+    const prefersDark = window.matchMedia(
+        "(prefers-color-scheme: dark)",
+    ).matches;
+    const next = toggleTheme(document.documentElement, prefersDark);
+    document.documentElement.style.colorScheme = next;
+    return next;
+}

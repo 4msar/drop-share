@@ -473,6 +473,32 @@ cp .claude/skills/publish-artifact/SKILL.md /path/to/project/.claude/skills/publ
 That's also how anyone else using Claude Code can pick it up — the file is
 self-contained and doesn't depend on anything else in this repo.
 
+### Recommended skills for this stack (optional, per-developer)
+
+This project spans a React + Tailwind CSS v4 client and a Cloudflare Worker
+(R2, Wrangler). Unlike `publish-artifact` above, the following aren't shipped
+in this repo — they're general-purpose Claude Code skills installed
+per-developer at `~/.claude/skills/`, so each contributor who wants them
+installs their own copy:
+
+- **`tailwindcss`** — Tailwind v4 utility-class reference:
+    ```bash
+    npx skills add hairyf/skills@tailwindcss
+    ```
+- **`cloudflare`**, **`wrangler`**, **`workers-best-practices`** — Cloudflare
+  Workers/R2 platform reference, Wrangler CLI syntax, and a Workers
+  production-best-practices checklist, all retrieval-first against
+  Cloudflare's own docs rather than relying on the model's training data. Find
+  and install the current versions with:
+    ```bash
+    npx skills find cloudflare workers
+    ```
+    (the [Skills CLI](https://skills.sh/), a package manager for Claude Code
+    skills — `npx skills add <owner/repo>@<skill>` installs whatever it finds)
+
+None of this is required to build, test, or deploy the project — it only
+affects how Claude Code assists while working in this repo.
+
 ## Deploying
 
 Via the **Deploy to Cloudflare** button above, or manually. Either way,

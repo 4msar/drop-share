@@ -1,4 +1,4 @@
-import { toggleTheme } from "../lib/theme";
+import { toggleDocumentTheme } from "../lib/theme";
 
 export const Footer = () => {
     return (
@@ -43,16 +43,7 @@ export const Footer = () => {
                 |
                 <button
                     className="text-body cursor-pointer"
-                    onClick={() => {
-                        const prefersDark = window.matchMedia(
-                            "(prefers-color-scheme: dark)",
-                        ).matches;
-                        const next = toggleTheme(
-                            document.documentElement,
-                            prefersDark,
-                        );
-                        document.documentElement.style.colorScheme = next;
-                    }}
+                    onClick={() => toggleDocumentTheme()}
                     title="Toggle theme"
                 >
                     <svg

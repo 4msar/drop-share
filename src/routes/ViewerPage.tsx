@@ -109,11 +109,8 @@ export default function ViewerPage() {
 
     useEffect(() => {
         const artifactName = listing?.label || id;
-        document.title =
-            routePath === ""
-                ? `${artifactName} · Drop Share`
-                : `${artifactName} · Drop Share`;
-    }, [listing?.label, id, routePath]);
+        document.title = `${artifactName} · Drop Share`;
+    }, [listing?.label, id]);
 
     useEffect(() => {
         const handleResize = () => {
@@ -227,8 +224,7 @@ export default function ViewerPage() {
                 onDeleted={() => setDeleted(true)}
                 onReload={() => setReloadToken((count) => count + 1)}
                 onError={setActionError}
-                onLocked={onTokenObtained}
-                onUnlocked={onTokenObtained}
+                onTokenObtained={onTokenObtained}
             />
 
             {actionError !== null && (
