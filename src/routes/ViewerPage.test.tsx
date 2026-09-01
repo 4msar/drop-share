@@ -1,7 +1,8 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ArtifactFile } from "../lib/artifact";
+import { hashPassword } from "../lib/hash";
 import { addRecentItem, getRecentItems } from "../lib/recent";
 import { getStoredToken, saveToken } from "../lib/tokens";
 import ViewerPage from "./ViewerPage";
@@ -9,25 +10,25 @@ import ViewerPage from "./ViewerPage";
 const ID = "01ARZ3NDEKTSV4RRFFQ69G5FAV";
 
 function file(
-    name: string,
-    overrides: Partial<ArtifactFile> = {},
+  name: string,
+  overrides: Partial<ArtifactFile> = {},
 ): ArtifactFile {
-    return {
-        name,
-        size: 128,
-        previewable: true,
-        markdown: false,
-        ...overrides,
-    };
+  return {
+    name,
+    size: 128,
+    previewable: true,
+    markdown: false,
+    ...overrides,
+  };
 }
 
 interface Listing {
-    files?: ArtifactFile[];
-    directories?: string[];
-    path?: string;
-    locked?: boolean;
-    canModify?: boolean;
-    label?: string;
+  files?: ArtifactFile[];
+  directories?: string[];
+  path?: string;
+  locked?: boolean;
+  canModify?: boolean;
+  label?: string;
 }
 
 const UPDATE_URL = `/api/artifact/${ID}`;
@@ -38,820 +39,968 @@ const UPDATE_URL = `/api/artifact/${ID}`;
  * (an already-protected artifact stays exactly as declared - it doesn't
  * matter whether the URL happens to carry a token, since this mock has no
  * way to know what "the current valid token" is until a real lock call
- * generates one). Once this test itself PATCHes `lock: true`, the mock
- * switches to checking the request's token against the token that call
- * generated - the same way the real Worker behaves. Label edits go through
- * the same PATCH endpoint and are gated by the same auth.
+ * supplies one). Once this test itself PATCHes `lock: true`, the mock
+ * switches to checking the request's token against whatever token that call
+ * supplied - the same way the real Worker behaves (it never generates a
+ * token itself; the client derives it from the password). Label edits go
+ * through the same PATCH endpoint and are gated by the same auth.
  */
-function stubListing(initial: Listing, options: { lockToken?: string } = {}) {
-    let locked = initial.locked ?? false;
-    const baseCanModify = initial.canModify ?? true;
-    let label = initial.label;
-    let requiresTokenMatch = false;
-    const lockToken = options.lockToken ?? "generated-token";
+function stubListing(
+  initial: Listing,
+  options: { requiredToken?: string } = {},
+) {
+  let locked = initial.locked ?? false;
+  const baseCanModify = initial.canModify ?? true;
+  let label = initial.label;
+  let requiredToken: string | null = options.requiredToken ?? null;
 
-    const canModifyWith = (suppliedToken: string | null) =>
-        requiresTokenMatch ? suppliedToken === lockToken : baseCanModify;
+  const canModifyWith = (suppliedToken: string | null) =>
+    requiredToken !== null ? suppliedToken === requiredToken : baseCanModify;
 
-    const fetchMock = vi.fn(async (...args: Parameters<typeof fetch>) => {
-        const url = String(args[0]);
-        const init = args[1] as RequestInit | undefined;
+  const fetchMock = vi.fn(async (...args: Parameters<typeof fetch>) => {
+    const url = String(args[0]);
+    const init = args[1] as RequestInit | undefined;
 
-        if (url === UPDATE_URL && init?.method === "PATCH") {
-            const suppliedToken =
-                (init.headers as Record<string, string> | undefined)?.["X-Artifact-Token"] ?? null;
-            const body = JSON.parse(String(init.body)) as { label?: string; lock?: boolean };
+    if (url === UPDATE_URL && init?.method === "PATCH") {
+      const suppliedToken =
+        (init.headers as Record<string, string> | undefined)?.[
+          "X-Artifact-Token"
+        ] ?? null;
+      const body = JSON.parse(String(init.body)) as {
+        label?: string;
+        lock?: boolean;
+        token?: string;
+      };
 
-            if (body.lock === true) {
-                if (locked) {
-                    return new Response(
-                        JSON.stringify({ success: false, error: "Artifact is already protected" }),
-                        { status: 409, headers: { "Content-Type": "application/json" } },
-                    );
-                }
-                locked = true;
-                requiresTokenMatch = true;
-            } else if (locked && !canModifyWith(suppliedToken)) {
-                return new Response(JSON.stringify({ success: false, error: "Forbidden" }), {
-                    status: 403,
-                    headers: { "Content-Type": "application/json" },
-                });
-            }
-
-            if (typeof body.label === "string") label = body.label;
-
-            return new Response(
-                JSON.stringify({
-                    success: true,
-                    id: ID,
-                    label,
-                    locked,
-                    canModify: true,
-                    ...(body.lock === true ? { token: lockToken } : {}),
-                }),
-                { status: 200, headers: { "Content-Type": "application/json" } },
-            );
+      if (body.lock === true) {
+        if (locked) {
+          return new Response(
+            JSON.stringify({
+              success: false,
+              error: "Artifact is already protected",
+            }),
+            { status: 409, headers: { "Content-Type": "application/json" } },
+          );
         }
-
-        if (url.startsWith("/api/artifact/")) {
-            const suppliedToken = new URL(url, "http://localhost").searchParams.get("token");
-            return new Response(
-                JSON.stringify({
-                    success: true,
-                    id: ID,
-                    path: initial.path ?? "",
-                    files: initial.files ?? [],
-                    directories: initial.directories ?? [],
-                    locked,
-                    canModify: canModifyWith(suppliedToken),
-                    label,
-                }),
-                {
-                    status: 200,
-                    headers: { "Content-Type": "application/json" },
-                },
-            );
+        if (!body.token) {
+          return new Response(
+            JSON.stringify({
+              success: false,
+              error: "A token is required to lock an artifact",
+            }),
+            { status: 400, headers: { "Content-Type": "application/json" } },
+          );
         }
-        return new Response("{}", { status: 200 });
-    });
-    vi.stubGlobal("fetch", fetchMock);
-    return fetchMock;
+        locked = true;
+        requiredToken = body.token;
+      } else if (locked && !canModifyWith(suppliedToken)) {
+        return new Response(
+          JSON.stringify({ success: false, error: "Forbidden" }),
+          {
+            status: 403,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      }
+
+      if (typeof body.label === "string") label = body.label;
+
+      return new Response(
+        JSON.stringify({
+          success: true,
+          id: ID,
+          label,
+          locked,
+          canModify: true,
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    }
+
+    if (url.startsWith("/api/artifact/")) {
+      const suppliedToken = new URL(url, "http://localhost").searchParams.get(
+        "token",
+      );
+      return new Response(
+        JSON.stringify({
+          success: true,
+          id: ID,
+          path: initial.path ?? "",
+          files: initial.files ?? [],
+          directories: initial.directories ?? [],
+          locked,
+          canModify: canModifyWith(suppliedToken),
+          label,
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
+    }
+    return new Response("{}", { status: 200 });
+  });
+  vi.stubGlobal("fetch", fetchMock);
+  return fetchMock;
 }
 
 async function renderViewer(subPath = "") {
-    function LocationProbe() {
-        const location = useLocation();
-        return <output data-testid="location-search">{location.search}</output>;
-    }
+  function LocationProbe() {
+    const location = useLocation();
+    return <output data-testid="location-search">{location.search}</output>;
+  }
 
-    render(
-        <MemoryRouter initialEntries={[`/a/${ID}/${subPath}`]}>
-            <Routes>
-                <Route path="/a/:id/*" element={<ViewerPage />} />
-            </Routes>
-            <LocationProbe />
-        </MemoryRouter>,
-    );
-    await waitFor(() => expect(screen.queryByText("Loading…")).toBeNull());
+  render(
+    <MemoryRouter initialEntries={[`/a/${ID}/${subPath}`]}>
+      <Routes>
+        <Route path="/a/:id/*" element={<ViewerPage />} />
+      </Routes>
+      <LocationProbe />
+    </MemoryRouter>,
+  );
+  await waitFor(() => expect(screen.queryByText("Loading…")).toBeNull());
 }
 
 async function renderViewerEntry(entry: string) {
-    function LocationProbe() {
-        const location = useLocation();
-        return <output data-testid="location-search">{location.search}</output>;
-    }
+  function LocationProbe() {
+    const location = useLocation();
+    return <output data-testid="location-search">{location.search}</output>;
+  }
 
-    render(
-        <MemoryRouter initialEntries={[entry]}>
-            <Routes>
-                <Route path="/a/:id/*" element={<ViewerPage />} />
-            </Routes>
-            <LocationProbe />
-        </MemoryRouter>,
-    );
-    await waitFor(() => expect(screen.queryByText("Loading…")).toBeNull());
+  render(
+    <MemoryRouter initialEntries={[entry]}>
+      <Routes>
+        <Route path="/a/:id/*" element={<ViewerPage />} />
+      </Routes>
+      <LocationProbe />
+    </MemoryRouter>,
+  );
+  await waitFor(() => expect(screen.queryByText("Loading…")).toBeNull());
 }
 
 beforeEach(() => {
-    vi.stubGlobal(
-        "confirm",
-        vi.fn(() => true),
-    );
+  vi.stubGlobal(
+    "confirm",
+    vi.fn(() => true),
+  );
 });
 
 afterEach(() => {
-    vi.unstubAllGlobals();
-    vi.restoreAllMocks();
-    localStorage.clear();
+  vi.unstubAllGlobals();
+  vi.restoreAllMocks();
+  localStorage.clear();
 });
 
 describe("preview pane defaults", () => {
-    it("restores the selected preview file from the file query param", async () => {
-        stubListing({ files: [file("a.txt"), file("b.txt")] });
-        await renderViewerEntry(`/a/${ID}/?file=b.txt`);
+  it("restores the selected preview file from the file query param", async () => {
+    stubListing({ files: [file("a.txt"), file("b.txt")] });
+    await renderViewerEntry(`/a/${ID}/?file=b.txt`);
 
-        const frame = screen.getByTitle("File preview") as HTMLIFrameElement;
-        expect(frame.getAttribute("src")).toBe(`/a/${ID}/b.txt`);
-    });
+    const frame = screen.getByTitle("File preview") as HTMLIFrameElement;
+    expect(frame.getAttribute("src")).toBe(`/a/${ID}/b.txt`);
+  });
 
-    it("updates the file query param when a previewable file is clicked", async () => {
-        stubListing({ files: [file("a.txt"), file("b.txt")] });
-        await renderViewer();
+  it("updates the file query param when a previewable file is clicked", async () => {
+    stubListing({ files: [file("a.txt"), file("b.txt")] });
+    await renderViewer();
 
-        screen.getByRole("link", { name: "b.txt" }).click();
+    screen.getByRole("link", { name: "b.txt" }).click();
 
-        await waitFor(() =>
-            expect(screen.getByTestId("location-search").textContent).toBe(
-                "?file=b.txt",
-            ),
-        );
-        expect(screen.getByTitle("File preview").getAttribute("src")).toBe(
-            `/a/${ID}/b.txt`,
-        );
-    });
+    await waitFor(() =>
+      expect(screen.getByTestId("location-search").textContent).toBe(
+        "?file=b.txt",
+      ),
+    );
+    expect(screen.getByTitle("File preview").getAttribute("src")).toBe(
+      `/a/${ID}/b.txt`,
+    );
+  });
 
-    it("defaults the preview pane to index.html when one is present", async () => {
-        stubListing({ files: [file("about.html"), file("index.html")] });
-        await renderViewer();
+  it("defaults the preview pane to index.html when one is present", async () => {
+    stubListing({ files: [file("about.html"), file("index.html")] });
+    await renderViewer();
 
-        const frame = screen.getByTitle("File preview") as HTMLIFrameElement;
-        expect(frame.getAttribute("src")).toBe(`/a/${ID}/index.html`);
-    });
+    const frame = screen.getByTitle("File preview") as HTMLIFrameElement;
+    expect(frame.getAttribute("src")).toBe(`/a/${ID}/index.html`);
+  });
 
-    it("pre-selects the only file for a single-file artifact when it's previewable", async () => {
-        stubListing({ files: [file("solo.txt")] });
-        await renderViewer();
+  it("pre-selects the only file for a single-file artifact when it's previewable", async () => {
+    stubListing({ files: [file("solo.txt")] });
+    await renderViewer();
 
-        const frame = screen.getByTitle("File preview") as HTMLIFrameElement;
-        expect(frame.getAttribute("src")).toBe(`/a/${ID}/solo.txt`);
-    });
+    const frame = screen.getByTitle("File preview") as HTMLIFrameElement;
+    expect(frame.getAttribute("src")).toBe(`/a/${ID}/solo.txt`);
+  });
 
-    it("shows a placeholder and no iframe when nothing in the folder is previewable", async () => {
-        stubListing({ files: [file("blob.bin", { previewable: false })] });
-        await renderViewer();
+  it("shows a placeholder and no iframe when nothing in the folder is previewable", async () => {
+    stubListing({ files: [file("blob.bin", { previewable: false })] });
+    await renderViewer();
 
-        expect(screen.queryByTitle("File preview")).toBeNull();
-        expect(screen.getByText(/no preview available/i)).toBeTruthy();
-    });
+    expect(screen.queryByTitle("File preview")).toBeNull();
+    expect(screen.getByText(/no preview available/i)).toBeTruthy();
+  });
 
-    it("a folder with only subfolders points at the subfolders, not at missing previews", async () => {
-        stubListing({ directories: ["nested/"] });
-        await renderViewer();
+  it("a folder with only subfolders points at the subfolders, not at missing previews", async () => {
+    stubListing({ directories: ["nested/"] });
+    await renderViewer();
 
-        expect(screen.getByText(/only contains subfolders/i)).toBeTruthy();
-    });
+    expect(screen.getByText(/only contains subfolders/i)).toBeTruthy();
+  });
 });
 
 describe("markdown handling", () => {
-    it("renders a markdown file through the Worker by default, with a source toggle", async () => {
-        stubListing({ files: [file("readme.md", { markdown: true })] });
-        await renderViewer();
+  it("renders a markdown file through the Worker by default, with a source toggle", async () => {
+    stubListing({ files: [file("readme.md", { markdown: true })] });
+    await renderViewer();
 
-        const frame = screen.getByTitle("File preview") as HTMLIFrameElement;
-        expect(frame.getAttribute("src")).toBe(
-            `/a/${ID}/readme.md?render=html`,
-        );
-        expect(
-            screen.getByRole("button", { name: "Show source" }),
-        ).toBeTruthy();
-    });
+    const frame = screen.getByTitle("File preview") as HTMLIFrameElement;
+    expect(frame.getAttribute("src")).toBe(`/a/${ID}/readme.md?render=html`);
+    expect(screen.getByRole("button", { name: "Show source" })).toBeTruthy();
+  });
 
-    it("swaps the iframe to the raw source when the toggle is used", async () => {
-        stubListing({ files: [file("readme.md", { markdown: true })] });
-        await renderViewer();
+  it("swaps the iframe to the raw source when the toggle is used", async () => {
+    stubListing({ files: [file("readme.md", { markdown: true })] });
+    await renderViewer();
 
-        screen.getByRole("button", { name: "Show source" }).click();
+    screen.getByRole("button", { name: "Show source" }).click();
 
-        // The iframe is keyed on its URL so it remounts rather than reusing the
-        // previous document - re-query instead of holding the old node.
-        await waitFor(() =>
-            expect(screen.getByTitle("File preview").getAttribute("src")).toBe(
-                `/a/${ID}/readme.md`,
-            ),
-        );
-        expect(
-            screen.getByRole("button", { name: "Show rendered" }),
-        ).toBeTruthy();
-    });
+    // The iframe is keyed on its URL so it remounts rather than reusing the
+    // previous document - re-query instead of holding the old node.
+    await waitFor(() =>
+      expect(screen.getByTitle("File preview").getAttribute("src")).toBe(
+        `/a/${ID}/readme.md`,
+      ),
+    );
+    expect(screen.getByRole("button", { name: "Show rendered" })).toBeTruthy();
+  });
 
-    it("does not add a source toggle for non-markdown previewable files", async () => {
-        stubListing({ files: [file("page.html")] });
-        await renderViewer();
+  it("does not add a source toggle for non-markdown previewable files", async () => {
+    stubListing({ files: [file("page.html")] });
+    await renderViewer();
 
-        expect(
-            screen.queryByRole("button", { name: "Show source" }),
-        ).toBeNull();
-    });
+    expect(screen.queryByRole("button", { name: "Show source" })).toBeNull();
+  });
 });
 
 describe("sidebar", () => {
-    it("gives every file and folder its own open-in-new-tab link", async () => {
-        stubListing({ files: [file("page.html")], directories: ["assets/"] });
-        await renderViewer();
+  it("gives every file and folder its own open-in-new-tab link", async () => {
+    stubListing({ files: [file("page.html")], directories: ["assets/"] });
+    await renderViewer();
 
-        const fileTab = screen.getByRole("link", {
-            name: /open page\.html in a new tab/i,
-        });
-        expect(fileTab.getAttribute("href")).toBe(`/a/${ID}/page.html`);
-        expect(fileTab.getAttribute("target")).toBe("_blank");
-
-        const dirTab = screen.getByRole("link", {
-            name: /open assets\/ in a new tab/i,
-        });
-        expect(dirTab.getAttribute("href")).toBe(`/a/${ID}/assets/`);
+    const fileTab = screen.getByRole("link", {
+      name: /open page\.html in a new tab/i,
     });
+    expect(fileTab.getAttribute("href")).toBe(`/a/${ID}/page.html`);
+    expect(fileTab.getAttribute("target")).toBe("_blank");
 
-    it("offers no parent link at the artifact root", async () => {
-        stubListing({ files: [file("a.txt")] });
-        await renderViewer();
-
-        expect(
-            screen.queryByRole("link", { name: /parent directory/i }),
-        ).toBeNull();
+    const dirTab = screen.getByRole("link", {
+      name: /open assets\/ in a new tab/i,
     });
+    expect(dirTab.getAttribute("href")).toBe(`/a/${ID}/assets/`);
+  });
 
-    it("links to the parent directory from inside a subfolder", async () => {
-        stubListing({ files: [file("style.css")], path: "css/" });
-        await renderViewer("css/");
+  it("offers no parent link at the artifact root", async () => {
+    stubListing({ files: [file("a.txt")] });
+    await renderViewer();
 
-        const parent = screen.getByRole("link", { name: /parent directory/i });
-        expect(parent.getAttribute("href")).toBe(`/a/${ID}/`);
-    });
+    expect(
+      screen.queryByRole("link", { name: /parent directory/i }),
+    ).toBeNull();
+  });
 
-    it("links a nested subfolder's parent to the folder above it, not to the root", async () => {
-        stubListing({ files: [file("lib.css")], path: "css/vendor/" });
-        await renderViewer("css/vendor/");
+  it("links to the parent directory from inside a subfolder", async () => {
+    stubListing({ files: [file("style.css")], path: "css/" });
+    await renderViewer("css/");
 
-        const parent = screen.getByRole("link", { name: /parent directory/i });
-        expect(parent.getAttribute("href")).toBe(`/a/${ID}/css/`);
-    });
+    const parent = screen.getByRole("link", { name: /parent directory/i });
+    expect(parent.getAttribute("href")).toBe(`/a/${ID}/`);
+  });
 
-    it("links a non-previewable file straight at its bytes so it downloads", async () => {
-        stubListing({ files: [file("blob.bin", { previewable: false })] });
-        await renderViewer();
+  it("links a nested subfolder's parent to the folder above it, not to the root", async () => {
+    stubListing({ files: [file("lib.css")], path: "css/vendor/" });
+    await renderViewer("css/vendor/");
 
-        const link = screen.getByRole("link", { name: /^blob\.bin$/ });
-        expect(link.getAttribute("href")).toBe(`/a/${ID}/blob.bin`);
-    });
+    const parent = screen.getByRole("link", { name: /parent directory/i });
+    expect(parent.getAttribute("href")).toBe(`/a/${ID}/css/`);
+  });
+
+  it("links a non-previewable file straight at its bytes so it downloads", async () => {
+    stubListing({ files: [file("blob.bin", { previewable: false })] });
+    await renderViewer();
+
+    const link = screen.getByRole("link", { name: /^blob\.bin$/ });
+    expect(link.getAttribute("href")).toBe(`/a/${ID}/blob.bin`);
+  });
 });
 
 describe("artifact actions", () => {
-    it("scopes the upload control to the artifact root", async () => {
-        const fetchMock = stubListing({ files: [file("a.txt")] });
-        await renderViewer();
+  it("scopes the upload control to the artifact root", async () => {
+    const fetchMock = stubListing({ files: [file("a.txt")] });
+    await renderViewer();
 
-        const input = screen.getByLabelText(
-            "Add files to this folder",
-        ) as HTMLInputElement;
-        Object.defineProperty(input, "files", {
-            value: [new File(["x"], "new.txt")],
-            configurable: true,
-        });
-        input.dispatchEvent(new Event("change", { bubbles: true }));
-
-        await waitFor(() => {
-            const uploadCall = fetchMock.mock.calls.find(
-                (call) => String(call[0]) === "/api/upload",
-            );
-            expect(uploadCall).toBeTruthy();
-            const form = uploadCall![1]!.body as FormData;
-            expect(form.get("mode")).toBe("directory");
-            expect(form.get("id")).toBe(ID);
-            expect((form.get("files") as File).name).toBe("new.txt");
-        });
+    const input = screen.getByLabelText(
+      "Add files to this folder",
+    ) as HTMLInputElement;
+    Object.defineProperty(input, "files", {
+      value: [new File(["x"], "new.txt")],
+      configurable: true,
     });
+    input.dispatchEvent(new Event("change", { bubbles: true }));
 
-    it("scopes the upload control to the current subfolder's path", async () => {
-        const fetchMock = stubListing({
-            files: [file("style.css")],
-            path: "css/",
-        });
-        await renderViewer("css/");
-
-        const input = screen.getByLabelText(
-            "Add files to this folder",
-        ) as HTMLInputElement;
-        Object.defineProperty(input, "files", {
-            value: [new File(["x"], "new.css")],
-            configurable: true,
-        });
-        input.dispatchEvent(new Event("change", { bubbles: true }));
-
-        await waitFor(() => {
-            const uploadCall = fetchMock.mock.calls.find(
-                (call) => String(call[0]) === "/api/upload",
-            );
-            expect(uploadCall).toBeTruthy();
-            const form = uploadCall![1]!.body as FormData;
-            expect((form.get("files") as File).name).toBe("css/new.css");
-        });
+    await waitFor(() => {
+      const uploadCall = fetchMock.mock.calls.find(
+        (call) => String(call[0]) === "/api/upload",
+      );
+      expect(uploadCall).toBeTruthy();
+      const form = uploadCall![1]!.body as FormData;
+      expect(form.get("mode")).toBe("directory");
+      expect(form.get("id")).toBe(ID);
+      expect((form.get("files") as File).name).toBe("new.txt");
     });
+  });
 
-    it("offers a delete control at the root only", async () => {
-        stubListing({ files: [file("a.txt")] });
-        await renderViewer();
-        screen.getByRole("button", { name: "More actions" }).click();
-        expect(
-            await screen.findByRole("button", { name: "Delete" }),
-        ).toBeTruthy();
+  it("scopes the upload control to the current subfolder's path", async () => {
+    const fetchMock = stubListing({
+      files: [file("style.css")],
+      path: "css/",
     });
+    await renderViewer("css/");
 
-    it("hides the delete control inside a subfolder, since it deletes the whole artifact", async () => {
-        stubListing({ files: [file("style.css")], path: "css/" });
-        await renderViewer("css/");
-        screen.getByRole("button", { name: "More actions" }).click();
-        // Wait for the menu to actually open (via a control that's always
-        // present) before asserting Delete is absent - otherwise this would
-        // pass vacuously whether or not the menu ever opened.
-        await screen.findByRole("button", { name: "Share" });
-        expect(screen.queryByRole("button", { name: "Delete" })).toBeNull();
+    const input = screen.getByLabelText(
+      "Add files to this folder",
+    ) as HTMLInputElement;
+    Object.defineProperty(input, "files", {
+      value: [new File(["x"], "new.css")],
+      configurable: true,
     });
+    input.dispatchEvent(new Event("change", { bubbles: true }));
 
-    it("confirms before deleting, then reports the artifact is gone", async () => {
-        const fetchMock = stubListing({ files: [file("a.txt")] });
-        await renderViewer();
-
-        screen.getByRole("button", { name: "More actions" }).click();
-        (await screen.findByRole("button", { name: "Delete" })).click();
-
-        await waitFor(() => {
-            expect(globalThis.confirm).toHaveBeenCalled();
-            expect(
-                fetchMock.mock.calls.some(
-                    (call) =>
-                        String(call[0]) === `/api/artifact/${ID}` &&
-                        call[1]?.method === "DELETE",
-                ),
-            ).toBe(true);
-        });
-        expect(await screen.findByText(/artifact deleted/i)).toBeTruthy();
+    await waitFor(() => {
+      const uploadCall = fetchMock.mock.calls.find(
+        (call) => String(call[0]) === "/api/upload",
+      );
+      expect(uploadCall).toBeTruthy();
+      const form = uploadCall![1]!.body as FormData;
+      expect((form.get("files") as File).name).toBe("css/new.css");
     });
+  });
 
-    it("does not delete when the confirmation is declined", async () => {
-        vi.stubGlobal(
-            "confirm",
-            vi.fn(() => false),
-        );
-        const fetchMock = stubListing({ files: [file("a.txt")] });
-        await renderViewer();
+  it("offers a delete control at the root only", async () => {
+    stubListing({ files: [file("a.txt")] });
+    await renderViewer();
+    screen.getByRole("button", { name: "More actions" }).click();
+    expect(await screen.findByRole("button", { name: "Delete" })).toBeTruthy();
+  });
 
-        screen.getByRole("button", { name: "More actions" }).click();
-        (await screen.findByRole("button", { name: "Delete" })).click();
+  it("hides the delete control inside a subfolder, since it deletes the whole artifact", async () => {
+    stubListing({ files: [file("style.css")], path: "css/" });
+    await renderViewer("css/");
+    screen.getByRole("button", { name: "More actions" }).click();
+    // Wait for the menu to actually open (via a control that's always
+    // present) before asserting Delete is absent - otherwise this would
+    // pass vacuously whether or not the menu ever opened.
+    await screen.findByRole("button", { name: "Share" });
+    expect(screen.queryByRole("button", { name: "Delete" })).toBeNull();
+  });
 
-        await waitFor(() => expect(globalThis.confirm).toHaveBeenCalled());
-        expect(
-            fetchMock.mock.calls.some((call) => call[1]?.method === "DELETE"),
-        ).toBe(false);
+  it("confirms before deleting, then reports the artifact is gone", async () => {
+    const fetchMock = stubListing({ files: [file("a.txt")] });
+    await renderViewer();
+
+    screen.getByRole("button", { name: "More actions" }).click();
+    (await screen.findByRole("button", { name: "Delete" })).click();
+
+    await waitFor(() => {
+      expect(globalThis.confirm).toHaveBeenCalled();
+      expect(
+        fetchMock.mock.calls.some(
+          (call) =>
+            String(call[0]) === `/api/artifact/${ID}` &&
+            call[1]?.method === "DELETE",
+        ),
+      ).toBe(true);
     });
+    expect(await screen.findByText(/artifact deleted/i)).toBeTruthy();
+  });
+
+  it("does not delete when the confirmation is declined", async () => {
+    vi.stubGlobal(
+      "confirm",
+      vi.fn(() => false),
+    );
+    const fetchMock = stubListing({ files: [file("a.txt")] });
+    await renderViewer();
+
+    screen.getByRole("button", { name: "More actions" }).click();
+    (await screen.findByRole("button", { name: "Delete" })).click();
+
+    await waitFor(() => expect(globalThis.confirm).toHaveBeenCalled());
+    expect(
+      fetchMock.mock.calls.some((call) => call[1]?.method === "DELETE"),
+    ).toBe(false);
+  });
 });
 
 describe("protected artifacts", () => {
-    it("hides upload-more and delete when the artifact can't be modified", async () => {
-        stubListing({ files: [file("a.txt")], locked: true, canModify: false });
-        await renderViewer();
+  it("hides upload-more and delete when the artifact can't be modified", async () => {
+    stubListing({ files: [file("a.txt")], locked: true, canModify: false });
+    await renderViewer();
 
-        screen.getByRole("button", { name: "More actions" }).click();
-        await screen.findByRole("button", { name: "Share" });
-        expect(
-            screen.queryByRole("button", { name: "Upload more" }),
-        ).toBeNull();
-        expect(screen.queryByRole("button", { name: "Delete" })).toBeNull();
+    screen.getByRole("button", { name: "More actions" }).click();
+    await screen.findByRole("button", { name: "Share" });
+    expect(screen.queryByRole("button", { name: "Upload more" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Delete" })).toBeNull();
+  });
+
+  it("keeps upload-more and delete available for a legacy artifact with no protection metadata", async () => {
+    stubListing({ files: [file("a.txt")] });
+    await renderViewer();
+
+    screen.getByRole("button", { name: "More actions" }).click();
+    expect(
+      await screen.findByRole("button", { name: "Upload more" }),
+    ).toBeTruthy();
+    expect(await screen.findByRole("button", { name: "Delete" })).toBeTruthy();
+  });
+
+  it("shows a Lock action for an unprotected artifact", async () => {
+    stubListing({ files: [file("a.txt")], locked: false });
+    await renderViewer();
+
+    screen.getByRole("button", { name: "More actions" }).click();
+    expect(await screen.findByRole("button", { name: "Lock" })).toBeTruthy();
+  });
+
+  it("hides the Lock action for an artifact that's already protected", async () => {
+    stubListing({ files: [file("a.txt")], locked: true, canModify: true });
+    await renderViewer();
+
+    screen.getByRole("button", { name: "More actions" }).click();
+    await screen.findByRole("button", { name: "Share" });
+    expect(screen.queryByRole("button", { name: "Lock" })).toBeNull();
+  });
+
+  async function submitLockPassword(password: string, confirm = password) {
+    screen.getByRole("button", { name: "More actions" }).click();
+    (await screen.findByRole("button", { name: "Lock" })).click();
+
+    fireEvent.change(await screen.findByLabelText("Password"), {
+      target: { value: password },
+    });
+    fireEvent.change(screen.getByLabelText("Confirm password"), {
+      target: { value: confirm },
+    });
+    screen.getByRole("button", { name: "Lock artifact" }).click();
+  }
+
+  it("locks the artifact with the entered password and refreshes the action menu afterward", async () => {
+    const fetchMock = stubListing({ files: [file("a.txt")], locked: false });
+    await renderViewer();
+
+    await submitLockPassword("hunter2");
+
+    await waitFor(() => {
+      expect(
+        fetchMock.mock.calls.some(
+          (call) =>
+            String(call[0]) === `/api/artifact/${ID}` &&
+            call[1]?.method === "PATCH" &&
+            JSON.parse(String(call[1]?.body)).lock === true,
+        ),
+      ).toBe(true);
     });
 
-    it("keeps upload-more and delete available for a legacy artifact with no protection metadata", async () => {
-        stubListing({ files: [file("a.txt")] });
-        await renderViewer();
+    expect(await screen.findByText(/artifact locked/i)).toBeTruthy();
 
-        screen.getByRole("button", { name: "More actions" }).click();
-        expect(
-            await screen.findByRole("button", { name: "Upload more" }),
-        ).toBeTruthy();
-        expect(
-            await screen.findByRole("button", { name: "Delete" }),
-        ).toBeTruthy();
+    // Locking carries the derived token into the URL, so the follow-up
+    // listing refresh sees canModify: true and the Lock action disappears.
+    const derivedToken = await waitFor(() => {
+      const stored = getStoredToken(ID);
+      expect(stored).toBeTruthy();
+      return stored!;
     });
+    await waitFor(() =>
+      expect(screen.getByTestId("location-search").textContent).toContain(
+        `token=${derivedToken}`,
+      ),
+    );
+    screen.getByRole("button", { name: "Done" }).click();
+    screen.getByRole("button", { name: "More actions" }).click();
+    await waitFor(() =>
+      expect(screen.queryByRole("button", { name: "Lock" })).toBeNull(),
+    );
+  });
 
-    it("shows a Lock action for an unprotected artifact", async () => {
-        stubListing({ files: [file("a.txt")], locked: false });
-        await renderViewer();
+  it("saves the derived token to localStorage after locking", async () => {
+    stubListing({ files: [file("a.txt")], locked: false });
+    await renderViewer();
 
-        screen.getByRole("button", { name: "More actions" }).click();
-        expect(await screen.findByRole("button", { name: "Lock" })).toBeTruthy();
+    await submitLockPassword("hunter2");
+
+    await waitFor(() => expect(getStoredToken(ID)).toBeTruthy());
+  });
+
+  it("shows an error and does not lock when the password is empty", async () => {
+    const fetchMock = stubListing({ files: [file("a.txt")], locked: false });
+    await renderViewer();
+
+    await submitLockPassword("");
+
+    expect(
+      (await screen.findByRole("alert", {}, { timeout: 5000 })).textContent,
+    ).toMatch(/password/i);
+    expect(
+      fetchMock.mock.calls.some(
+        (call) => call[1]?.method === "PATCH" && call[0] === UPDATE_URL,
+      ),
+    ).toBe(false);
+  });
+
+  it("shows an error and does not lock when the passwords don't match", async () => {
+    const fetchMock = stubListing({ files: [file("a.txt")], locked: false });
+    await renderViewer();
+
+    await submitLockPassword("hunter2", "hunter3");
+
+    expect(
+      (await screen.findByRole("alert", {}, { timeout: 5000 })).textContent,
+    ).toMatch(/match/i);
+    expect(
+      fetchMock.mock.calls.some(
+        (call) => call[1]?.method === "PATCH" && call[0] === UPDATE_URL,
+      ),
+    ).toBe(false);
+  });
+
+  it("removes the saved token when the artifact is deleted", async () => {
+    saveToken(ID, "stale-token");
+    stubListing({ files: [file("a.txt")], locked: true, canModify: true });
+    await renderViewer();
+
+    screen.getByRole("button", { name: "More actions" }).click();
+    (await screen.findByRole("button", { name: "Delete" })).click();
+
+    await waitFor(() => expect(getStoredToken(ID)).toBeNull());
+  });
+
+  it("does not lock when the password prompt is cancelled", async () => {
+    const fetchMock = stubListing({ files: [file("a.txt")], locked: false });
+    await renderViewer();
+
+    screen.getByRole("button", { name: "More actions" }).click();
+    (await screen.findByRole("button", { name: "Lock" })).click();
+
+    await screen.findByLabelText("Password");
+    screen.getByRole("button", { name: "Cancel" }).click();
+
+    await waitFor(() => expect(screen.queryByLabelText("Password")).toBeNull());
+    expect(
+      fetchMock.mock.calls.some(
+        (call) => call[1]?.method === "PATCH" && call[0] === UPDATE_URL,
+      ),
+    ).toBe(false);
+  });
+
+  it("shows an Unlock action when the artifact can't be modified", async () => {
+    stubListing({ files: [file("a.txt")], locked: true, canModify: false });
+    await renderViewer();
+
+    screen.getByRole("button", { name: "More actions" }).click();
+    expect(await screen.findByRole("button", { name: "Unlock" })).toBeTruthy();
+  });
+
+  it("hides the Unlock action once the artifact can be modified", async () => {
+    stubListing({ files: [file("a.txt")], locked: true, canModify: true });
+    await renderViewer();
+
+    screen.getByRole("button", { name: "More actions" }).click();
+    await screen.findByRole("button", { name: "Share" });
+    expect(screen.queryByRole("button", { name: "Unlock" })).toBeNull();
+  });
+
+  it("unlocks with the correct password, revealing upload-more and delete", async () => {
+    const correctToken = await hashPassword(ID, "hunter2");
+    stubListing(
+      { files: [file("a.txt")], locked: true, canModify: false },
+      { requiredToken: correctToken },
+    );
+    await renderViewer();
+
+    screen.getByRole("button", { name: "More actions" }).click();
+    (await screen.findByRole("button", { name: "Unlock" })).click();
+
+    fireEvent.change(await screen.findByLabelText("Password"), {
+      target: { value: "hunter2" },
     });
+    screen.getByRole("button", { name: "Unlock artifact" }).click();
 
-    it("hides the Lock action for an artifact that's already protected", async () => {
-        stubListing({ files: [file("a.txt")], locked: true, canModify: true });
-        await renderViewer();
+    await waitFor(() => expect(getStoredToken(ID)).toBe(correctToken));
 
-        screen.getByRole("button", { name: "More actions" }).click();
-        await screen.findByRole("button", { name: "Share" });
-        expect(screen.queryByRole("button", { name: "Lock" })).toBeNull();
+    // The menu item's own click also scheduled the dropdown to
+    // auto-close ~1s later (same as every other menu action), so
+    // reopening it here can race that timer - retry the click until it
+    // sticks instead of asserting on a single attempt.
+    await waitFor(() => {
+      const moreActions = screen.getByRole("button", {
+        name: "More actions",
+      });
+      if (moreActions.getAttribute("aria-expanded") !== "true") {
+        moreActions.click();
+      }
+      expect(screen.getByRole("button", { name: "Upload more" })).toBeTruthy();
     });
+    expect(screen.getByRole("button", { name: "Delete" })).toBeTruthy();
+  });
 
-    it("locks the artifact, shows the generated token once, and refreshes the action menu afterward", async () => {
-        const fetchMock = stubListing(
-            { files: [file("a.txt")], locked: false },
-            { lockToken: "one-time-token" },
-        );
-        await renderViewer();
+  it("shows an error and stays locked when the password is wrong", async () => {
+    const correctToken = await hashPassword(ID, "hunter2");
+    stubListing(
+      { files: [file("a.txt")], locked: true, canModify: false },
+      { requiredToken: correctToken },
+    );
+    await renderViewer();
 
-        screen.getByRole("button", { name: "More actions" }).click();
-        (await screen.findByRole("button", { name: "Lock" })).click();
+    screen.getByRole("button", { name: "More actions" }).click();
+    (await screen.findByRole("button", { name: "Unlock" })).click();
 
-        await waitFor(() => {
-            expect(
-                fetchMock.mock.calls.some(
-                    (call) =>
-                        String(call[0]) === `/api/artifact/${ID}` &&
-                        call[1]?.method === "PATCH" &&
-                        JSON.parse(String(call[1]?.body)).lock === true,
-                ),
-            ).toBe(true);
-        });
-
-        expect(await screen.findByText("one-time-token")).toBeTruthy();
-
-        // Locking carries the fresh token into the URL, so the follow-up
-        // listing refresh sees canModify: true and the Lock action disappears.
-        await waitFor(() =>
-            expect(
-                screen.getByTestId("location-search").textContent,
-            ).toContain("token=one-time-token"),
-        );
-        screen.getByRole("button", { name: "Done" }).click();
-        screen.getByRole("button", { name: "More actions" }).click();
-        await waitFor(() =>
-            expect(screen.queryByRole("button", { name: "Lock" })).toBeNull(),
-        );
+    fireEvent.change(await screen.findByLabelText("Password"), {
+      target: { value: "wrong-password" },
     });
+    screen.getByRole("button", { name: "Unlock artifact" }).click();
 
-    it("saves the generated token to localStorage after locking", async () => {
-        stubListing(
-            { files: [file("a.txt")], locked: false },
-            { lockToken: "one-time-token" },
-        );
-        await renderViewer();
+    expect(
+      (await screen.findByRole("alert", {}, { timeout: 5000 })).textContent,
+    ).toMatch(/incorrect/i);
+    expect(getStoredToken(ID)).toBeNull();
+  });
 
-        screen.getByRole("button", { name: "More actions" }).click();
-        (await screen.findByRole("button", { name: "Lock" })).click();
+  it("shows an error and does not unlock when the password is empty", async () => {
+    stubListing({ files: [file("a.txt")], locked: true, canModify: false });
+    await renderViewer();
 
-        await waitFor(() =>
-            expect(getStoredToken(ID)).toBe("one-time-token"),
-        );
-    });
+    screen.getByRole("button", { name: "More actions" }).click();
+    (await screen.findByRole("button", { name: "Unlock" })).click();
+    (await screen.findByRole("button", { name: "Unlock artifact" })).click();
 
-    it("removes the saved token when the artifact is deleted", async () => {
-        saveToken(ID, "stale-token");
-        stubListing({ files: [file("a.txt")], locked: true, canModify: true });
-        await renderViewer();
-
-        screen.getByRole("button", { name: "More actions" }).click();
-        (await screen.findByRole("button", { name: "Delete" })).click();
-
-        await waitFor(() => expect(getStoredToken(ID)).toBeNull());
-    });
-
-    it("shows an error and does not lock when the confirmation is declined", async () => {
-        vi.stubGlobal(
-            "confirm",
-            vi.fn(() => false),
-        );
-        const fetchMock = stubListing({ files: [file("a.txt")], locked: false });
-        await renderViewer();
-
-        screen.getByRole("button", { name: "More actions" }).click();
-        (await screen.findByRole("button", { name: "Lock" })).click();
-
-        await waitFor(() => expect(globalThis.confirm).toHaveBeenCalled());
-        expect(
-            fetchMock.mock.calls.some(
-                (call) => call[1]?.method === "PATCH" && call[0] === UPDATE_URL,
-            ),
-        ).toBe(false);
-    });
+    expect(
+      (await screen.findByRole("alert", {}, { timeout: 5000 })).textContent,
+    ).toMatch(/password/i);
+  });
 });
 
 describe("rename", () => {
-    it("offers a Rename action at the root only, for a modifiable artifact", async () => {
-        stubListing({ files: [file("a.txt")], label: "Original" });
-        await renderViewer();
+  it("offers a Rename action at the root only, for a modifiable artifact", async () => {
+    stubListing({ files: [file("a.txt")], label: "Original" });
+    await renderViewer();
 
-        screen.getByRole("button", { name: "More actions" }).click();
-        expect(await screen.findByRole("button", { name: "Rename" })).toBeTruthy();
+    screen.getByRole("button", { name: "More actions" }).click();
+    expect(await screen.findByRole("button", { name: "Rename" })).toBeTruthy();
+  });
+
+  it("hides Rename inside a subfolder", async () => {
+    stubListing({
+      files: [file("style.css")],
+      path: "css/",
+      label: "Original",
     });
+    await renderViewer("css/");
 
-    it("hides Rename inside a subfolder", async () => {
-        stubListing({ files: [file("style.css")], path: "css/", label: "Original" });
-        await renderViewer("css/");
+    screen.getByRole("button", { name: "More actions" }).click();
+    await screen.findByRole("button", { name: "Share" });
+    expect(screen.queryByRole("button", { name: "Rename" })).toBeNull();
+  });
 
-        screen.getByRole("button", { name: "More actions" }).click();
-        await screen.findByRole("button", { name: "Share" });
-        expect(screen.queryByRole("button", { name: "Rename" })).toBeNull();
+  it("hides Rename when the artifact can't be modified", async () => {
+    stubListing({
+      files: [file("a.txt")],
+      locked: true,
+      canModify: false,
+      label: "Original",
     });
+    await renderViewer();
 
-    it("hides Rename when the artifact can't be modified", async () => {
-        stubListing({ files: [file("a.txt")], locked: true, canModify: false, label: "Original" });
-        await renderViewer();
+    screen.getByRole("button", { name: "More actions" }).click();
+    await screen.findByRole("button", { name: "Share" });
+    expect(screen.queryByRole("button", { name: "Rename" })).toBeNull();
+  });
 
-        screen.getByRole("button", { name: "More actions" }).click();
-        await screen.findByRole("button", { name: "Share" });
-        expect(screen.queryByRole("button", { name: "Rename" })).toBeNull();
+  it("renames via the prompt and reloads the listing with the new label", async () => {
+    vi.stubGlobal(
+      "prompt",
+      vi.fn(() => "New Label"),
+    );
+    const fetchMock = stubListing({
+      files: [file("a.txt")],
+      label: "Original",
     });
+    await renderViewer();
 
-    it("renames via the prompt and reloads the listing with the new label", async () => {
-        vi.stubGlobal(
-            "prompt",
-            vi.fn(() => "New Label"),
-        );
-        const fetchMock = stubListing({ files: [file("a.txt")], label: "Original" });
-        await renderViewer();
+    screen.getByRole("button", { name: "More actions" }).click();
+    (await screen.findByRole("button", { name: "Rename" })).click();
 
-        screen.getByRole("button", { name: "More actions" }).click();
-        (await screen.findByRole("button", { name: "Rename" })).click();
-
-        await waitFor(() => {
-            expect(
-                fetchMock.mock.calls.some(
-                    (call) =>
-                        call[0] === UPDATE_URL &&
-                        call[1]?.method === "PATCH" &&
-                        JSON.parse(String(call[1]?.body)).label === "New Label",
-                ),
-            ).toBe(true);
-        });
-        expect(await screen.findAllByText(/New Label/)).not.toHaveLength(0);
+    await waitFor(() => {
+      expect(
+        fetchMock.mock.calls.some(
+          (call) =>
+            call[0] === UPDATE_URL &&
+            call[1]?.method === "PATCH" &&
+            JSON.parse(String(call[1]?.body)).label === "New Label",
+        ),
+      ).toBe(true);
     });
+    expect(await screen.findAllByText(/New Label/)).not.toHaveLength(0);
+  });
 
-    it("does not rename when the prompt is cancelled", async () => {
-        vi.stubGlobal(
-            "prompt",
-            vi.fn(() => null),
-        );
-        const fetchMock = stubListing({ files: [file("a.txt")], label: "Original" });
-        await renderViewer();
-
-        screen.getByRole("button", { name: "More actions" }).click();
-        (await screen.findByRole("button", { name: "Rename" })).click();
-
-        await waitFor(() => expect(globalThis.prompt).toHaveBeenCalled());
-        expect(
-            fetchMock.mock.calls.some((call) => call[1]?.method === "PATCH"),
-        ).toBe(false);
+  it("does not rename when the prompt is cancelled", async () => {
+    vi.stubGlobal(
+      "prompt",
+      vi.fn(() => null),
+    );
+    const fetchMock = stubListing({
+      files: [file("a.txt")],
+      label: "Original",
     });
+    await renderViewer();
+
+    screen.getByRole("button", { name: "More actions" }).click();
+    (await screen.findByRole("button", { name: "Rename" })).click();
+
+    await waitFor(() => expect(globalThis.prompt).toHaveBeenCalled());
+    expect(
+      fetchMock.mock.calls.some((call) => call[1]?.method === "PATCH"),
+    ).toBe(false);
+  });
 });
 
 describe("token propagation", () => {
-    it("includes the URL token when fetching the listing", async () => {
-        const fetchMock = stubListing({ files: [file("a.txt")] });
-        await renderViewerEntry(`/a/${ID}/?token=my-token`);
+  it("includes the URL token when fetching the listing", async () => {
+    const fetchMock = stubListing({ files: [file("a.txt")] });
+    await renderViewerEntry(`/a/${ID}/?token=my-token`);
 
-        await waitFor(() => {
-            const call = fetchMock.mock.calls.find((c) =>
-                String(c[0]).startsWith(`/api/artifact/${ID}`),
-            );
-            expect(String(call![0])).toContain("token=my-token");
-        });
+    await waitFor(() => {
+      const call = fetchMock.mock.calls.find((c) =>
+        String(c[0]).startsWith(`/api/artifact/${ID}`),
+      );
+      expect(String(call![0])).toContain("token=my-token");
     });
+  });
 
-    it("saves a valid URL token to localStorage when it isn't already stored", async () => {
-        stubListing({ files: [file("a.txt")], locked: true, canModify: true });
-        await renderViewerEntry(`/a/${ID}/?token=my-token`);
+  it("saves a valid URL token to localStorage when it isn't already stored", async () => {
+    stubListing({ files: [file("a.txt")], locked: true, canModify: true });
+    await renderViewerEntry(`/a/${ID}/?token=my-token`);
 
-        await waitFor(() => expect(getStoredToken(ID)).toBe("my-token"));
+    await waitFor(() => expect(getStoredToken(ID)).toBe("my-token"));
+  });
+
+  it("does not save the URL token when it fails to authorize", async () => {
+    stubListing({ files: [file("a.txt")], locked: true, canModify: false });
+    await renderViewerEntry(`/a/${ID}/?token=wrong-token`);
+
+    await screen.findByText(/a\.txt/);
+    expect(getStoredToken(ID)).toBeNull();
+  });
+
+  it("preserves the token in a folder link", async () => {
+    stubListing({ directories: ["css/"] });
+    await renderViewerEntry(`/a/${ID}/?token=my-token`);
+
+    const link = screen.getByRole("link", { name: "css/" });
+    expect(link.getAttribute("href")).toBe(`/a/${ID}/css/?token=my-token`);
+  });
+
+  it("preserves the token in the parent-directory link", async () => {
+    stubListing({ files: [file("style.css")], path: "css/" });
+    await renderViewerEntry(`/a/${ID}/css/?token=my-token`);
+
+    const parent = screen.getByRole("link", { name: /parent directory/i });
+    expect(parent.getAttribute("href")).toBe(`/a/${ID}/?token=my-token`);
+  });
+
+  it("preserves the token when selecting a different file", async () => {
+    stubListing({ files: [file("a.txt"), file("b.txt")] });
+    await renderViewerEntry(`/a/${ID}/?token=my-token`);
+
+    screen.getByRole("link", { name: "b.txt" }).click();
+
+    await waitFor(() =>
+      expect(screen.getByTestId("location-search").textContent).toContain(
+        "token=my-token",
+      ),
+    );
+  });
+
+  it("sends the token as X-Artifact-Token when deleting", async () => {
+    const fetchMock = stubListing({ files: [file("a.txt")] });
+    await renderViewerEntry(`/a/${ID}/?token=my-token`);
+
+    screen.getByRole("button", { name: "More actions" }).click();
+    (await screen.findByRole("button", { name: "Delete" })).click();
+
+    await waitFor(() => {
+      const call = fetchMock.mock.calls.find(
+        (c) =>
+          String(c[0]) === `/api/artifact/${ID}` && c[1]?.method === "DELETE",
+      );
+      expect(call).toBeTruthy();
+      const headers = call![1]?.headers as Record<string, string>;
+      expect(headers["X-Artifact-Token"]).toBe("my-token");
     });
+  });
 
-    it("does not save the URL token when it fails to authorize", async () => {
-        stubListing({ files: [file("a.txt")], locked: true, canModify: false });
-        await renderViewerEntry(`/a/${ID}/?token=wrong-token`);
+  it("sends the token as X-Artifact-Token when uploading more", async () => {
+    const fetchMock = stubListing({ files: [file("a.txt")] });
+    await renderViewerEntry(`/a/${ID}/?token=my-token`);
 
-        await screen.findByText(/a\.txt/);
-        expect(getStoredToken(ID)).toBeNull();
+    const input = screen.getByLabelText(
+      "Add files to this folder",
+    ) as HTMLInputElement;
+    Object.defineProperty(input, "files", {
+      value: [new File(["x"], "new.txt")],
+      configurable: true,
     });
+    input.dispatchEvent(new Event("change", { bubbles: true }));
 
-    it("preserves the token in a folder link", async () => {
-        stubListing({ directories: ["css/"] });
-        await renderViewerEntry(`/a/${ID}/?token=my-token`);
-
-        const link = screen.getByRole("link", { name: "css/" });
-        expect(link.getAttribute("href")).toBe(`/a/${ID}/css/?token=my-token`);
+    await waitFor(() => {
+      const call = fetchMock.mock.calls.find(
+        (c) => String(c[0]) === "/api/upload",
+      );
+      expect(call).toBeTruthy();
+      const headers = call![1]?.headers as Record<string, string>;
+      expect(headers["X-Artifact-Token"]).toBe("my-token");
     });
+  });
 
-    it("preserves the token in the parent-directory link", async () => {
-        stubListing({ files: [file("style.css")], path: "css/" });
-        await renderViewerEntry(`/a/${ID}/css/?token=my-token`);
+  it("omits the token header entirely when no token is present", async () => {
+    const fetchMock = stubListing({ files: [file("a.txt")] });
+    await renderViewer();
 
-        const parent = screen.getByRole("link", { name: /parent directory/i });
-        expect(parent.getAttribute("href")).toBe(`/a/${ID}/?token=my-token`);
+    screen.getByRole("button", { name: "More actions" }).click();
+    (await screen.findByRole("button", { name: "Delete" })).click();
+
+    await waitFor(() => {
+      const call = fetchMock.mock.calls.find((c) => c[1]?.method === "DELETE");
+      expect(call).toBeTruthy();
+      expect(call![1]?.headers).toBeUndefined();
     });
-
-    it("preserves the token when selecting a different file", async () => {
-        stubListing({ files: [file("a.txt"), file("b.txt")] });
-        await renderViewerEntry(`/a/${ID}/?token=my-token`);
-
-        screen.getByRole("link", { name: "b.txt" }).click();
-
-        await waitFor(() =>
-            expect(
-                screen.getByTestId("location-search").textContent,
-            ).toContain("token=my-token"),
-        );
-    });
-
-    it("sends the token as X-Artifact-Token when deleting", async () => {
-        const fetchMock = stubListing({ files: [file("a.txt")] });
-        await renderViewerEntry(`/a/${ID}/?token=my-token`);
-
-        screen.getByRole("button", { name: "More actions" }).click();
-        (await screen.findByRole("button", { name: "Delete" })).click();
-
-        await waitFor(() => {
-            const call = fetchMock.mock.calls.find(
-                (c) =>
-                    String(c[0]) === `/api/artifact/${ID}` &&
-                    c[1]?.method === "DELETE",
-            );
-            expect(call).toBeTruthy();
-            const headers = call![1]?.headers as Record<string, string>;
-            expect(headers["X-Artifact-Token"]).toBe("my-token");
-        });
-    });
-
-    it("sends the token as X-Artifact-Token when uploading more", async () => {
-        const fetchMock = stubListing({ files: [file("a.txt")] });
-        await renderViewerEntry(`/a/${ID}/?token=my-token`);
-
-        const input = screen.getByLabelText(
-            "Add files to this folder",
-        ) as HTMLInputElement;
-        Object.defineProperty(input, "files", {
-            value: [new File(["x"], "new.txt")],
-            configurable: true,
-        });
-        input.dispatchEvent(new Event("change", { bubbles: true }));
-
-        await waitFor(() => {
-            const call = fetchMock.mock.calls.find(
-                (c) => String(c[0]) === "/api/upload",
-            );
-            expect(call).toBeTruthy();
-            const headers = call![1]?.headers as Record<string, string>;
-            expect(headers["X-Artifact-Token"]).toBe("my-token");
-        });
-    });
-
-    it("omits the token header entirely when no token is present", async () => {
-        const fetchMock = stubListing({ files: [file("a.txt")] });
-        await renderViewer();
-
-        screen.getByRole("button", { name: "More actions" }).click();
-        (await screen.findByRole("button", { name: "Delete" })).click();
-
-        await waitFor(() => {
-            const call = fetchMock.mock.calls.find(
-                (c) => c[1]?.method === "DELETE",
-            );
-            expect(call).toBeTruthy();
-            expect(call![1]?.headers).toBeUndefined();
-        });
-    });
+  });
 });
 
 describe("recent artifacts", () => {
-    it("records the viewed artifact in the recent list", async () => {
-        stubListing({ files: [file("a.txt")] });
-        await renderViewer();
+  it("records the viewed artifact in the recent list", async () => {
+    stubListing({ files: [file("a.txt")] });
+    await renderViewer();
 
-        await waitFor(() =>
-            expect(getRecentItems().some((item) => item.id === ID)).toBe(true),
-        );
-    });
+    await waitFor(() =>
+      expect(getRecentItems().some((item) => item.id === ID)).toBe(true),
+    );
+  });
 
-    it("stores the artifact's label from the listing response in the recent list", async () => {
-        stubListing({ files: [file("a.txt")], label: "My Cool Site" });
-        await renderViewer();
+  it("stores the artifact's label from the listing response in the recent list", async () => {
+    stubListing({ files: [file("a.txt")], label: "My Cool Site" });
+    await renderViewer();
 
-        await waitFor(() =>
-            expect(
-                getRecentItems().find((item) => item.id === ID)?.label,
-            ).toBe("My Cool Site"),
-        );
-    });
+    await waitFor(() =>
+      expect(getRecentItems().find((item) => item.id === ID)?.label).toBe(
+        "My Cool Site",
+      ),
+    );
+  });
 
-    it("leaves the recent item without a label for a legacy artifact that has none", async () => {
-        stubListing({ files: [file("a.txt")] });
-        await renderViewer();
+  it("leaves the recent item without a label for a legacy artifact that has none", async () => {
+    stubListing({ files: [file("a.txt")] });
+    await renderViewer();
 
-        await waitFor(() =>
-            expect(getRecentItems().some((item) => item.id === ID)).toBe(true),
-        );
-        expect(
-            getRecentItems().find((item) => item.id === ID)?.label,
-        ).toBeUndefined();
-    });
+    await waitFor(() =>
+      expect(getRecentItems().some((item) => item.id === ID)).toBe(true),
+    );
+    expect(
+      getRecentItems().find((item) => item.id === ID)?.label,
+    ).toBeUndefined();
+  });
 
-    it("shows a recent artifact's label instead of its id, falling back to the id when there is none", async () => {
-        addRecentItem("labeled-artifact", Date.now() - 60_000, "My Cool Site");
-        addRecentItem("plain-artifact", Date.now() - 30_000);
-        stubListing({ files: [file("a.txt")] });
-        await renderViewer();
+  it("shows a recent artifact's label instead of its id, falling back to the id when there is none", async () => {
+    addRecentItem("labeled-artifact", Date.now() - 60_000, "My Cool Site");
+    addRecentItem("plain-artifact", Date.now() - 30_000);
+    stubListing({ files: [file("a.txt")] });
+    await renderViewer();
 
-        await waitFor(() => expect(getRecentItems().length).toBe(3));
+    await waitFor(() => expect(getRecentItems().length).toBe(3));
 
-        screen.getByRole("button", { name: /switch artifact/i }).click();
+    screen.getByRole("button", { name: /switch artifact/i }).click();
 
-        expect(
-            await screen.findByRole("link", { name: /my cool site/i }),
-        ).toBeTruthy();
-        expect(screen.queryByText("labeled-artifact")).toBeNull();
-        expect(
-            await screen.findByRole("link", { name: /plain-artifact/i }),
-        ).toBeTruthy();
-    });
+    expect(
+      await screen.findByRole("link", { name: /my cool site/i }),
+    ).toBeTruthy();
+    expect(screen.queryByText("labeled-artifact")).toBeNull();
+    expect(
+      await screen.findByRole("link", { name: /plain-artifact/i }),
+    ).toBeTruthy();
+  });
 
-    it("does not show a switcher when this is the only recent artifact", async () => {
-        stubListing({ files: [file("a.txt")] });
-        await renderViewer();
+  it("does not show a switcher when this is the only recent artifact", async () => {
+    stubListing({ files: [file("a.txt")] });
+    await renderViewer();
 
-        await waitFor(() => expect(getRecentItems().length).toBe(1));
-        expect(
-            screen.queryByRole("button", { name: /switch artifact/i }),
-        ).toBeNull();
-    });
+    await waitFor(() => expect(getRecentItems().length).toBe(1));
+    expect(
+      screen.queryByRole("button", { name: /switch artifact/i }),
+    ).toBeNull();
+  });
 
-    it("offers a switcher to other recent artifacts and links to the selected one", async () => {
-        addRecentItem("other-artifact", Date.now() - 60_000);
-        stubListing({ files: [file("a.txt")] });
-        await renderViewer();
+  it("offers a switcher to other recent artifacts and links to the selected one", async () => {
+    addRecentItem("other-artifact", Date.now() - 60_000);
+    stubListing({ files: [file("a.txt")] });
+    await renderViewer();
 
-        await waitFor(() => expect(getRecentItems().length).toBe(2));
+    await waitFor(() => expect(getRecentItems().length).toBe(2));
 
-        screen.getByRole("button", { name: /switch artifact/i }).click();
+    screen.getByRole("button", { name: /switch artifact/i }).click();
 
-        const link = await waitFor(() =>
-            screen.getByRole("link", { name: /other-artifact/i }),
-        );
-        expect(link.getAttribute("href")).toBe("/a/other-artifact/");
-    });
+    const link = await waitFor(() =>
+      screen.getByRole("link", { name: /other-artifact/i }),
+    );
+    expect(link.getAttribute("href")).toBe("/a/other-artifact/");
+  });
 
-    it("auto-injects a saved token when switching to a recent artifact that was previously locked", async () => {
-        addRecentItem("other-artifact", Date.now() - 60_000);
-        saveToken("other-artifact", "other-token");
-        stubListing({ files: [file("a.txt")] });
-        await renderViewer();
+  it("auto-injects a saved token when switching to a recent artifact that was previously locked", async () => {
+    addRecentItem("other-artifact", Date.now() - 60_000);
+    saveToken("other-artifact", "other-token");
+    stubListing({ files: [file("a.txt")] });
+    await renderViewer();
 
-        await waitFor(() => expect(getRecentItems().length).toBe(2));
+    await waitFor(() => expect(getRecentItems().length).toBe(2));
 
-        screen.getByRole("button", { name: /switch artifact/i }).click();
+    screen.getByRole("button", { name: /switch artifact/i }).click();
 
-        const link = await waitFor(() =>
-            screen.getByRole("link", { name: /other-artifact/i }),
-        );
-        expect(link.getAttribute("href")).toBe(
-            "/a/other-artifact/?token=other-token",
-        );
-    });
+    const link = await waitFor(() =>
+      screen.getByRole("link", { name: /other-artifact/i }),
+    );
+    expect(link.getAttribute("href")).toBe(
+      "/a/other-artifact/?token=other-token",
+    );
+  });
 });
 
 describe("failure states", () => {
-    it("reports a missing artifact instead of an empty viewer", async () => {
-        vi.stubGlobal(
-            "fetch",
-            vi.fn(
-                async () =>
-                    new Response(JSON.stringify({ success: false }), {
-                        status: 404,
-                    }),
-            ),
-        );
-        render(
-            <MemoryRouter initialEntries={[`/a/${ID}/`]}>
-                <Routes>
-                    <Route path="/a/:id/*" element={<ViewerPage />} />
-                </Routes>
-            </MemoryRouter>,
-        );
-        expect(
-            await screen.findByText(/doesn't exist, or was deleted/i),
-        ).toBeTruthy();
-    });
+  it("reports a missing artifact instead of an empty viewer", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(JSON.stringify({ success: false }), {
+            status: 404,
+          }),
+      ),
+    );
+    render(
+      <MemoryRouter initialEntries={[`/a/${ID}/`]}>
+        <Routes>
+          <Route path="/a/:id/*" element={<ViewerPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    expect(
+      await screen.findByText(/doesn't exist, or was deleted/i),
+    ).toBeTruthy();
+  });
 });

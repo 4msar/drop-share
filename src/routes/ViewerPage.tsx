@@ -17,6 +17,7 @@ import { addRecentItem, type RecentItem, getRecentItems } from "../lib/recent";
 import { getStoredToken, saveToken } from "../lib/tokens";
 import { ArchiveIcon, CheckIcon } from "../components/Icons";
 import { ProgressBarWithTimeout } from "../components/ProgressBar";
+import { ErrorToast } from "../components/ErrorToast";
 
 export default function ViewerPage() {
     const params = useParams();
@@ -56,11 +57,10 @@ export default function ViewerPage() {
         );
     };
 
-    // Locking generates the token that keeps *this* browser able to modify
-    // the artifact going forward, so it's folded into the URL immediately -
-    // the effect above then refetches the listing with it and canModify
-    // flips to true.
-    const onLocked = (newToken: string) => {
+    // Locking and unlocking both end with this browser holding a fresh,
+    // valid token, so it's folded into the URL immediately - the effect
+    // below then refetches the listing with it and canModify flips to true.
+    const onTokenObtained = (newToken: string) => {
         setSearchParams(
             (current) => {
                 const next = new URLSearchParams(current);
@@ -227,16 +227,15 @@ export default function ViewerPage() {
                 onDeleted={() => setDeleted(true)}
                 onReload={() => setReloadToken((count) => count + 1)}
                 onError={setActionError}
-                onLocked={onLocked}
+                onLocked={onTokenObtained}
+                onUnlocked={onTokenObtained}
             />
 
             {actionError !== null && (
-                <p
-                    role="alert"
-                    className="border-b border-edge px-6 py-2 text-sm text-red-500"
-                >
-                    {actionError}
-                </p>
+                <ErrorToast
+                    message={actionError}
+                    onClose={() => setActionError(null)}
+                />
             )}
 
             <div

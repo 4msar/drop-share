@@ -141,7 +141,7 @@ async function updateArtifact(
     id: string,
     body: Record<string, unknown>,
     token: string | null,
-): Promise<{ label?: string; token?: string }> {
+): Promise<{ label?: string }> {
     const response = await fetch(`/api/artifact/${encodeURIComponent(id)}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json", ...tokenHeaders(token) },
@@ -150,7 +150,6 @@ async function updateArtifact(
     const parsed = (await response.json().catch(() => null)) as {
         success?: boolean;
         label?: string;
-        token?: string;
         error?: string;
     } | null;
     if (!response.ok || !parsed?.success) {
@@ -160,15 +159,12 @@ async function updateArtifact(
 }
 
 /**
- * Protects an unprotected artifact, generating its token server-side. The
- * token is returned exactly once - the caller is responsible for showing it
- * to the owner and carrying it forward (e.g. into the URL), since it can
- * never be retrieved again afterward.
+ * Protects an unprotected artifact with a caller-derived token (see
+ * `hashPassword`). The server only ever sees and stores this token - never
+ * the password it was derived from.
  */
-export async function lockArtifact(id: string): Promise<string> {
-    const { token } = await updateArtifact(id, { lock: true }, null);
-    if (!token) throw new Error("Failed to lock artifact.");
-    return token;
+export async function lockArtifact(id: string, token: string): Promise<void> {
+    await updateArtifact(id, { lock: true, token }, null);
 }
 
 /**

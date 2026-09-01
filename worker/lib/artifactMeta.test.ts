@@ -4,7 +4,6 @@ import {
   createArtifactMetadata,
   deriveArtifactLabel,
   deriveAuthStateForMetadata,
-  generateArtifactToken,
   metadataObjectKey,
   parseArtifactMetadata,
   serializeArtifactMetadata,
@@ -108,16 +107,6 @@ describe("timingSafeEqual", () => {
     expect(timingSafeEqual("abc", "abd")).toBe(false);
     expect(timingSafeEqual("abc", "ab")).toBe(false);
     expect(timingSafeEqual("", "")).toBe(true);
-  });
-});
-
-describe("generateArtifactToken", () => {
-  it("generates long, URL-safe, unpredictable tokens", () => {
-    const a = generateArtifactToken();
-    const b = generateArtifactToken();
-    expect(a).not.toBe(b);
-    expect(a.length).toBeGreaterThanOrEqual(40);
-    expect(a).toMatch(/^[A-Za-z0-9_-]+$/);
   });
 });
 

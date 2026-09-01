@@ -1,9 +1,9 @@
 import {
     type ArtifactMetadata,
     createArtifactMetadata,
-    generateArtifactToken,
     loadArtifactAuth,
     MAX_LABEL_LENGTH,
+    MAX_LOCK_TOKEN_LENGTH,
     metadataObjectKey,
     serializeArtifactMetadata,
 } from "../lib/artifactMeta.js";
@@ -15,11 +15,12 @@ const METADATA_CONTENT_TYPE = "application/json; charset=utf-8";
 interface ArtifactUpdateRequest {
     label?: unknown;
     lock?: unknown;
+    token?: unknown;
 }
 
 /**
  * Single route for every mutation of an artifact's `.artifact.json`: setting
- * its label and/or protecting it with a server-generated token. Both can be
+ * its label and/or protecting it with a client-supplied token. Both can be
  * requested in the same call. Unlike locking, a label edit is not "one-time" -
  * an unprotected artifact's label can be changed by anyone, same as an
  * unprotected artifact can be uploaded into or deleted by anyone. Once
@@ -47,6 +48,21 @@ export async function handleArtifactUpdate(
         }
     }
 
+    let lockToken: string | undefined;
+    if (wantsLock) {
+        if (
+            typeof request.token !== "string" ||
+            request.token.length === 0 ||
+            request.token.length > MAX_LOCK_TOKEN_LENGTH
+        ) {
+            return jsonError(
+                400,
+                `A token between 1 and ${MAX_LOCK_TOKEN_LENGTH} characters is required to lock an artifact`,
+            );
+        }
+        lockToken = request.token;
+    }
+
     const auth = await loadArtifactAuth(env.ARTIFACTS_BUCKET, id, token);
 
     // Re-locking an already-protected artifact is not a supported operation
@@ -67,11 +83,7 @@ export async function handleArtifactUpdate(
 
     const next: ArtifactMetadata = { ...(auth.metadata ?? createArtifactMetadata("")) };
     if (wantsLabel) next.label = normalizedLabel!;
-    let newToken: string | undefined;
-    if (wantsLock) {
-        newToken = generateArtifactToken();
-        next.token = newToken;
-    }
+    if (wantsLock) next.token = lockToken;
 
     await env.ARTIFACTS_BUCKET.put(metadataObjectKey(id), serializeArtifactMetadata(next), {
         httpMetadata: { contentType: METADATA_CONTENT_TYPE },
@@ -82,9 +94,6 @@ export async function handleArtifactUpdate(
         label: next.label,
         locked: next.token !== undefined,
         canModify: true,
-        ...(newToken
-            ? { token: newToken, message: "Save this token now - it cannot be shown again." }
-            : {}),
     });
     response.headers.set("Cache-Control", "no-store");
     return response;

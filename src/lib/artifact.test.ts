@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import { sortFiles, type ArtifactFile } from "./artifact";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { lockArtifact, sortFiles, type ArtifactFile } from "./artifact";
 
 function file(name: string, uploaded: string): ArtifactFile {
     return {
@@ -38,5 +38,49 @@ describe("sortFiles", () => {
             "mid.txt",
             "zeta.txt",
         ]);
+    });
+});
+
+describe("lockArtifact", () => {
+    afterEach(() => {
+        vi.unstubAllGlobals();
+    });
+
+    it("PATCHes the artifact with the given token", async () => {
+        const fetchMock = vi.fn(
+            async () =>
+                new Response(JSON.stringify({ success: true }), {
+                    status: 200,
+                    headers: { "Content-Type": "application/json" },
+                }),
+        );
+        vi.stubGlobal("fetch", fetchMock);
+
+        await lockArtifact("artifact-1", "derived-hash");
+
+        expect(fetchMock).toHaveBeenCalledWith(
+            "/api/artifact/artifact-1",
+            expect.objectContaining({
+                method: "PATCH",
+                body: JSON.stringify({ lock: true, token: "derived-hash" }),
+            }),
+        );
+    });
+
+    it("throws when the server rejects the lock", async () => {
+        vi.stubGlobal(
+            "fetch",
+            vi.fn(
+                async () =>
+                    new Response(
+                        JSON.stringify({ success: false, error: "Artifact is already protected" }),
+                        { status: 409, headers: { "Content-Type": "application/json" } },
+                    ),
+            ),
+        );
+
+        await expect(lockArtifact("artifact-1", "derived-hash")).rejects.toThrow(
+            "Artifact is already protected",
+        );
     });
 });

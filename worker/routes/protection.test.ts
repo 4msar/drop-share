@@ -62,8 +62,10 @@ async function updateArtifact(
   };
 }
 
-async function lock(id: string) {
-  return updateArtifact(id, { lock: true });
+const DEFAULT_TOKEN = "test-lock-token-0123456789";
+
+async function lock(id: string, token: string = DEFAULT_TOKEN) {
+  return updateArtifact(id, { lock: true, token });
 }
 
 describe("new artifacts get a hidden metadata marker", () => {
@@ -137,9 +139,8 @@ describe("legacy artifacts without metadata remain unrestricted", () => {
     const { id } = await upload("file", [{ name: "a.txt", content: "a" }]);
     await env.ARTIFACTS_BUCKET.delete(`${id}/.artifact.json`);
 
-    const { status, body } = await lock(id);
+    const { status } = await lock(id);
     expect(status).toBe(200);
-    expect(body.token).toBeTruthy();
   });
 });
 
@@ -187,22 +188,38 @@ describe("direct access to dot-prefixed files 404s", () => {
 });
 
 describe("lock endpoint", () => {
-  it("generates a token and reports the artifact as locked afterwards", async () => {
+  it("accepts a client-supplied token and reports the artifact as locked afterwards", async () => {
     const { id } = await upload("file", [{ name: "a.txt", content: "a" }]);
 
     const { status, body } = await lock(id);
     expect(status).toBe(200);
     expect(body.success).toBe(true);
-    expect(body.token).toBeTruthy();
-    expect(body.token!.length).toBeGreaterThanOrEqual(40);
 
     const { body: listedUnauthed } = await listing(id);
     expect(listedUnauthed.locked).toBe(true);
     expect(listedUnauthed.canModify).toBe(false);
 
-    const { body: listedAuthed } = await listing(id, body.token);
+    const { body: listedAuthed } = await listing(id, DEFAULT_TOKEN);
     expect(listedAuthed.locked).toBe(true);
     expect(listedAuthed.canModify).toBe(true);
+  });
+
+  it("400s a lock request with no token", async () => {
+    const { id } = await upload("file", [{ name: "a.txt", content: "a" }]);
+    const response = await updateArtifact(id, { lock: true });
+    expect(response.status).toBe(400);
+  });
+
+  it("400s a lock request with an empty-string token", async () => {
+    const { id } = await upload("file", [{ name: "a.txt", content: "a" }]);
+    const response = await updateArtifact(id, { lock: true, token: "" });
+    expect(response.status).toBe(400);
+  });
+
+  it("400s a lock request with an overlong token", async () => {
+    const { id } = await upload("file", [{ name: "a.txt", content: "a" }]);
+    const response = await updateArtifact(id, { lock: true, token: "x".repeat(513) });
+    expect(response.status).toBe(400);
   });
 
   it("rejects locking an artifact that's already protected", async () => {
@@ -260,12 +277,12 @@ describe("label updates", () => {
 
   it("allows relabeling a protected artifact with the correct token", async () => {
     const { id } = await upload("file", [{ name: "a.txt", content: "a" }]);
-    const { body: lockBody } = await lock(id);
+    await lock(id);
 
     const response = await updateArtifact(
       id,
       { label: "New Label" },
-      { "X-Artifact-Token": lockBody.token! },
+      { "X-Artifact-Token": DEFAULT_TOKEN },
     );
     expect(response.status).toBe(200);
     expect(response.body.label).toBe("New Label");
@@ -286,11 +303,14 @@ describe("label updates", () => {
   it("locks and relabels in a single request", async () => {
     const { id } = await upload("file", [{ name: "a.txt", content: "a" }]);
 
-    const { status, body } = await updateArtifact(id, { label: "New Label", lock: true });
+    const { status, body } = await updateArtifact(id, {
+      label: "New Label",
+      lock: true,
+      token: DEFAULT_TOKEN,
+    });
     expect(status).toBe(200);
     expect(body.label).toBe("New Label");
     expect(body.locked).toBe(true);
-    expect(body.token).toBeTruthy();
   });
 });
 
@@ -328,10 +348,10 @@ describe("mutation authorization", () => {
 
   it("allows upload-more on a protected artifact with the correct token", async () => {
     const { id, url } = await upload("file", [{ name: "a.txt", content: "a" }]);
-    const { body } = await lock(id);
+    await lock(id);
 
     const response = await exports.default.fetch(
-      uploadRequest("directory", [{ name: "b.txt", content: "b" }], { id }, { "X-Artifact-Token": body.token! }),
+      uploadRequest("directory", [{ name: "b.txt", content: "b" }], { id }, { "X-Artifact-Token": DEFAULT_TOKEN }),
     );
     expect(response.status).toBe(200);
     const fetched = await exports.default.fetch(`${ORIGIN}${url}b.txt`);
@@ -354,11 +374,11 @@ describe("mutation authorization", () => {
 
   it("allows delete on a protected artifact with the correct token", async () => {
     const { id, url } = await upload("file", [{ name: "a.txt", content: "a" }]);
-    const { body } = await lock(id);
+    await lock(id);
 
     const response = await exports.default.fetch(`${ORIGIN}/api/artifact/${id}`, {
       method: "DELETE",
-      headers: { "X-Artifact-Token": body.token! },
+      headers: { "X-Artifact-Token": DEFAULT_TOKEN },
     });
     expect(response.status).toBe(200);
 

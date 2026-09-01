@@ -27,10 +27,11 @@ export const MALFORMED_AUTH_STATE: ArtifactAuthState = {
     canModify: false,
 };
 
-const TOKEN_BYTE_LENGTH = 32;
-
 /** Longest label accepted through the label-update route (trimmed length). */
 export const MAX_LABEL_LENGTH = 200;
+
+/** Longest client-supplied lock token accepted through the lock route. */
+export const MAX_LOCK_TOKEN_LENGTH = 512;
 
 /** Builds the reserved R2 key for an artifact's hidden metadata object. */
 export function metadataObjectKey(artifactId: string): string {
@@ -131,18 +132,6 @@ export function timingSafeEqual(a: string, b: string): boolean {
         diff |= (aBytes[i] ?? 0) ^ (bBytes[i] ?? 0);
     }
     return diff === 0;
-}
-
-/** Generates a 256-bit, URL-safe, server-side-only lock token. */
-export function generateArtifactToken(): string {
-    const bytes = new Uint8Array(TOKEN_BYTE_LENGTH);
-    crypto.getRandomValues(bytes);
-    let binary = "";
-    for (const byte of bytes) binary += String.fromCharCode(byte);
-    return btoa(binary)
-        .replace(/\+/g, "-")
-        .replace(/\//g, "_")
-        .replace(/=+$/, "");
 }
 
 /** Derives auth state from metadata that is known to exist and parse successfully. */
