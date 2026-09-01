@@ -79,7 +79,11 @@ export function Header({
 
     const onShare = useCallback(async () => {
         try {
-            await navigator.clipboard.writeText(window.location.href);
+            const currentUrl = new URL(window.location.href);
+            if (currentUrl.searchParams.has("token")) {
+                currentUrl.searchParams.delete("token");
+            }
+            await navigator.clipboard.writeText(currentUrl.href);
             setShareLabel("Copied!");
         } catch {
             setShareLabel("Copy failed");

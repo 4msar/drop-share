@@ -77,7 +77,7 @@ Other endpoints:
 GET    /api/health              liveness check
 GET    /api/artifact/:id        JSON listing of an artifact's files/folders
 DELETE /api/artifact/:id        deletes every object under that artifact id
-POST   /api/artifact/:id/lock   protects an unprotected artifact (see below)
+PATCH  /api/artifact/:id        updates label and/or protects with a token (see below)
 GET    /a/:id/                  human-facing browse/download page (see above)
 ```
 
@@ -165,11 +165,17 @@ created before this feature has no such marker at all, and behave exactly as
 they always have (unrestricted, and lockable for the first time whenever the
 owner chooses to).
 
-**Locking** (`POST /api/artifact/:id/lock`) generates a token server-side,
-stores it in the metadata file, and returns it exactly once — it is never
-recoverable through the API afterward, so the viewer shows it in a one-time
-dialog with a copy button. Locking an already-protected artifact `409`s
-rather than silently reissuing a new token.
+**Locking** (`PATCH /api/artifact/:id` with `{ "lock": true, "token": "<token>" }`)
+is owner-chosen, not server-generated: the viewer prompts for a password,
+derives the lock token from it client-side (`hashPassword` in `src/lib/hash.ts`
+— `SHA-1("<artifactId>:<password>")`, so the artifact id acts as a free
+per-artifact salt), and sends only that derived token to the server. The
+plaintext password itself never leaves the browser or gets stored anywhere.
+The server just validates the token's length (1–512 chars,
+`MAX_LOCK_TOKEN_LENGTH`) and stores it as-is — it has no idea it's
+password-derived. Locking an already-protected artifact `409`s rather than
+silently replacing the token (there's no rotation feature; if the password is
+lost, the artifact stays locked for good).
 
 Once locked, mutating requests must present the token:
 
@@ -177,16 +183,32 @@ Once locked, mutating requests must present the token:
 GET    /api/artifact/:id?token=<token>        (token is optional even when locked — listings stay public)
 POST   /api/upload                            X-Artifact-Token: <token>   (when updating an existing artifact)
 DELETE /api/artifact/:id                      X-Artifact-Token: <token>
+PATCH  /api/artifact/:id                      X-Artifact-Token: <token>   (relabeling, once locked)
 ```
 
 A missing or incorrect token on a protected artifact's mutation gets `403`.
 The listing response includes safe booleans — `locked` and `canModify` — and
-never the token or the rest of the metadata file; the frontend keeps the
-token in the URL's `?token=` query param (never in `localStorage`/recent-items),
-carrying it across folder navigation and refreshes. That also means **sharing
-the current URL shares the token** if the artifact is locked — this is
-intentional (it's how a collaborator gets edit access), but is worth knowing
+never the token or the rest of the metadata file. Within the current tab, the
+frontend keeps the token in the URL's `?token=` query param, carrying it
+across folder navigation and refreshes; after a successful lock or unlock it
+is also saved to `localStorage` (`src/lib/tokens.ts`, keyed by artifact id),
+purely so the **Recent Switcher** can still show modify access for artifacts
+you've unlocked before, without the token round-tripping through the URL of
+every recent link. That means the address bar of a locked artifact's URL does
+carry the token, but the header's **Share** button deliberately strips the
+`token` query param before copying the link
+(`onShare` in `src/components/Header.tsx`) — so the common "copy a link to
+send to someone" path doesn't hand out edit access by accident. Manually
+copying the address bar URL still shares the token, which is worth knowing
 before pasting a locked artifact's URL somewhere public.
+
+**Unlocking** a locked artifact you don't currently have `canModify` on
+re-derives the candidate token from a re-entered password the same way, then
+probes it against the listing endpoint (`fetchArtifactListing` with that
+candidate token) — if `canModify` comes back true, the token is correct and
+gets saved; otherwise the viewer reports "Incorrect password" without ever
+calling a dedicated unlock endpoint (there isn't one — verification piggybacks
+on the existing read path).
 
 A metadata file that exists but fails to parse is treated as protected with
 no valid token (fails closed) rather than as unrestricted, so a corrupted
@@ -244,7 +266,11 @@ clicking a folder is a client-side navigation. A file that isn't previewable
 (a ZIP, a binary) has no click handler at all — the browser just downloads it
 via the `Content-Disposition` set on that URL. The default preview on load is
 `index.html` if one exists at that level, otherwise the first previewable
-file, otherwise a placeholder.
+file, otherwise a placeholder. The sidebar header shows the current
+directory's item count and a sort toggle — newest-first (upload time) or
+name (a-z) — that only reorders the current directory's own listing
+(`sortFiles` in `src/lib/artifact.ts`); it's client-side UI state, not
+persisted or sent to the server.
 
 Two decisions keep the move to a client-rendered viewer from widening the
 attack surface:
@@ -299,7 +325,7 @@ drop-share/
 │   └── routes/
 │       ├── upload.ts          POST /api/upload (all four modes)
 │       ├── browse.ts          file bytes, markdown render, listing JSON, delete
-│       ├── lock.ts            POST /api/artifact/:id/lock
+│       ├── update.ts          PATCH /api/artifact/:id (relabel and/or lock)
 │       └── health.ts
 ├── src/                       React + Tailwind client (Vite)
 │   ├── App.tsx                react-router: / and /a/:id/*
@@ -307,10 +333,12 @@ drop-share/
 │   ├── routes/
 │   │   ├── UploadPage.tsx     drop zone, ZIP choice, progress, result
 │   │   └── ViewerPage.tsx     two-pane artifact viewer
-│   ├── components/            Button, FileList, PreviewPane, ProgressBar, UploadIcon
+│   ├── components/            Header, FileList, PreviewPane, ErrorToast, ProgressBar
 │   └── lib/
 │       ├── upload.ts          drag/drop + directory-entry traversal, XHR upload w/ progress
-│       ├── artifact.ts        listing fetch, delete, add-files, preview selection
+│       ├── artifact.ts        listing fetch, delete, add-files, preview selection, sorting
+│       ├── hash.ts            derives a lock token from a password (SHA-1, artifact id as salt)
+│       ├── tokens.ts          per-artifact token storage (localStorage), keyed by artifact id
 │       └── format.ts          byte formatting, file glyphs
 ├── cli/                       published to npm as drop-and-share (zero runtime deps)
 │   └── src/index.ts
