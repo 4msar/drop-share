@@ -129,7 +129,10 @@ export function PreviewPane({
                     {selected?.markdown && (
                         <Button
                             className="bg-surface p-2"
-                            title={showSource ? "Show preview" : "Show source"}
+                            title={showSource ? "Show rendered" : "Show source"}
+                            aria-label={
+                                showSource ? "Show rendered" : "Show source"
+                            }
                             onClick={() =>
                                 setSourceMode({
                                     fileName: selected.name,
