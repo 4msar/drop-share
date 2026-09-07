@@ -131,10 +131,12 @@ function validateDirectorySizes(entries: DirectoryEntry[]): number {
 async function postUpload(
     server: string,
     form: FormData,
+    token: string | undefined,
 ): Promise<UploadResult> {
     const response = await fetch(`${server}/api/upload`, {
         method: "POST",
         body: form,
+        headers: token ? { "X-Artifact-Token": token } : undefined,
     });
     let body: { success?: boolean; id?: string; url?: string; error?: string };
     try {
@@ -160,18 +162,20 @@ async function uploadSingleFile(
     mode: UploadMode,
     displayName: string,
     artifactId: string | undefined,
+    token: string | undefined,
 ): Promise<UploadResult> {
     const form = new FormData();
     form.set("mode", mode);
     if (artifactId) form.set("id", artifactId);
     form.append("files", new Blob([readFileSync(absolutePath)]), displayName);
-    return postUpload(server, form);
+    return postUpload(server, form, token);
 }
 
 async function uploadDirectory(
     server: string,
     entries: DirectoryEntry[],
     artifactId: string | undefined,
+    token: string | undefined,
 ): Promise<UploadResult> {
     const form = new FormData();
     form.set("mode", "directory");
@@ -183,7 +187,7 @@ async function uploadDirectory(
             entry.relativePath,
         );
     }
-    return postUpload(server, form);
+    return postUpload(server, form, token);
 }
 
 function printResult(
@@ -201,6 +205,7 @@ function printResult(
 async function performUpload(
     args: Args,
     artifactId: string | undefined,
+    token: string | undefined,
 ): Promise<UploadResult> {
     if (args.targetPaths.length > 1) {
         const entries = buildMultiFileEntries(args.targetPaths);
@@ -208,7 +213,7 @@ async function performUpload(
         console.log(
             `Uploading ${entries.length} files (${formatBytes(totalSize)}) to ${args.server}...`,
         );
-        return uploadDirectory(args.server, entries, artifactId);
+        return uploadDirectory(args.server, entries, artifactId, token);
     }
 
     const targetPath = args.targetPaths[0];
@@ -228,7 +233,7 @@ async function performUpload(
         console.log(
             `Uploading ${basename(targetPath)}/ (${entries.length} files, ${formatBytes(totalSize)}) to ${args.server}...`,
         );
-        return uploadDirectory(args.server, entries, artifactId);
+        return uploadDirectory(args.server, entries, artifactId, token);
     }
 
     const displayName = args.name ?? basename(targetPath);
@@ -250,6 +255,7 @@ async function performUpload(
         mode,
         displayName,
         artifactId,
+        token,
     );
 }
 
@@ -280,11 +286,17 @@ function stateDirectory(targetPaths: string[]): string {
     return baseDirectory(targetPaths, directoryTargets);
 }
 
-function saveResult(statePath: string, args: Args, result: UploadResult): void {
+function saveResult(
+    statePath: string,
+    args: Args,
+    result: UploadResult,
+    token: string | undefined,
+): void {
     setEntry(statePath, args.server, stateDirectory(args.targetPaths), {
         id: result.id,
         url: result.url,
         updatedAt: new Date().toISOString(),
+        ...(token ? { token } : {}),
     });
 }
 
@@ -299,10 +311,11 @@ async function main(): Promise<void> {
     const plan = resolvePlan(args, existing);
 
     const attemptId = plan.action === "update" ? plan.id : undefined;
+    const token = args.token ?? existing?.token;
 
     try {
-        const result = await performUpload(args, attemptId);
-        saveResult(statePath, args, result);
+        const result = await performUpload(args, attemptId, token);
+        saveResult(statePath, args, result, token);
         printResult(
             args.server,
             result,
@@ -341,8 +354,8 @@ async function main(): Promise<void> {
 
     // Plain `upload` auto-detected a now-stale artifact - fall back to
     // publishing a fresh one instead of failing outright.
-    const result = await performUpload(args, undefined);
-    saveResult(statePath, args, result);
+    const result = await performUpload(args, undefined, args.token);
+    saveResult(statePath, args, result, args.token);
     printResult(args.server, result, "Artifact:");
 }
 

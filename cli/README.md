@@ -33,8 +33,8 @@ This gives you a `drop-share` binary directly on your PATH.
 ## Usage
 
 ```
-drop-share upload <path> [<path> ...] [--server <url>] [--extract] [--name <name>] [--new]
-drop-share update <path> [--server <url>] [--extract] [--id <id>]
+drop-share upload <path> [<path> ...] [--server <url>] [--extract] [--name <name>] [--token <token>] [--password <password>] [--new]
+drop-share update <path> [--server <url>] [--extract] [--id <id>] [--token <token>] [--password <password>]
 ```
 
 | Argument / option           | Description                                                                                                                                 |
@@ -45,6 +45,8 @@ drop-share update <path> [--server <url>] [--extract] [--id <id>]
 | `--name <name>`             | Override the display/stored filename for a single-file upload.                                                                              |
 | `--new` (`upload` only)     | Force publishing a brand-new artifact even if this directory was published before.                                                          |
 | `--id <id>` (`update` only) | Update a specific artifact id directly, instead of looking up the one saved for this path.                                                  |
+| `--token <token>`           | Token for updating a protected artifact. The token is sent in the `X-Artifact-Token` header and saved in `~/.drop-share/state.json`.        |
+| `--password <password>`     | Alias for `--token`.                                                                                                                        |
 
 Passing several paths to `upload` bundles them into a single artifact. Each
 path must be a file, not a directory. Since paths are plain positional
@@ -66,6 +68,11 @@ a fresh artifact.
 export ARTIFACT_SERVER=https://your-domain
 drop-share upload ./release.zip
 ```
+
+Protected artifacts reuse the saved token automatically when uploading again from
+the same directory. Pass `--token` (or `--password`) to provide or replace it
+explicitly. Tokens are stored in `~/.drop-share/state.json`; protect that file and
+do not share it.
 
 > **Note:** if you don't pass `--server` and don't set `ARTIFACT_SERVER`,
 > this CLI uploads to the maintainer's own server
@@ -138,7 +145,7 @@ the one that actually matters and can't be bypassed by skipping the CLI.
   previous upload in that directory (see `drop-share update` above) instead
   of creating a new one, unless you pass `--new`. Bundled files use their
   common parent directory.
-- **No authentication**: this CLI talks to a drop-share server that has no
-  auth by design (see the [main README](https://github.com/4msar/drop-share#security-model-read-this-before-deploying-publicly)).
-  Anyone who can reach the server can upload; point `--server` at a server
-  you control.
+- **Optional artifact protection**: unprotected artifacts need no token. Protected
+  artifact updates require `--token`/`--password`, or the token saved from an earlier
+  upload. This is per-artifact protection, not user authentication; point `--server`
+  at a server you control.

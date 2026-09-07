@@ -6,6 +6,7 @@ export interface StateEntry {
     id: string;
     url: string;
     updatedAt: string;
+    token?: string;
 }
 
 type State = Record<string, StateEntry>;

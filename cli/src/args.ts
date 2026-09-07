@@ -10,14 +10,15 @@ export interface Args {
     name?: string;
     forceNew: boolean;
     id?: string;
+    token?: string;
 }
 
 function printUsageAndExit(): never {
     console.error(
-        "Usage: drop-share upload <path> [<path> ...] [--server <url>] [--extract] [--name <name>] [--new]",
+        "Usage: drop-share upload <path> [<path> ...] [--server <url>] [--extract] [--name <name>] [--token <token>] [--password <password>] [--new]",
     );
     console.error(
-        "       drop-share update <path> [<path> ...] [--server <url>] [--extract] [--id <id>]",
+        "       drop-share update <path> [<path> ...] [--server <url>] [--extract] [--id <id>] [--token <token>] [--password <password>]",
     );
     console.error("");
     console.error(
@@ -41,6 +42,7 @@ export function parseArgs(argv: string[]): Args {
     let name: string | undefined;
     let forceNew = false;
     let id: string | undefined;
+    let token: string | undefined;
     const targetPaths: string[] = [];
 
     for (let i = 0; i < rest.length; i++) {
@@ -55,6 +57,8 @@ export function parseArgs(argv: string[]): Args {
             forceNew = true;
         } else if (arg === "--id" && command === "update") {
             id = rest[++i];
+        } else if (arg === "--token" || arg === "--password") {
+            token = rest[++i];
         } else if (arg.startsWith("--")) {
             console.error(`Unknown option: ${arg}`);
             printUsageAndExit();
@@ -79,5 +83,6 @@ export function parseArgs(argv: string[]): Args {
         name,
         forceNew,
         id,
+        token,
     };
 }

@@ -60,10 +60,12 @@ describe("state", () => {
             id: "01ARZ3NDEKTSV4RRFFQ69G5FAV",
             url: "/a/01ARZ3NDEKTSV4RRFFQ69G5FAV/",
             updatedAt: "2026-08-24T00:00:00.000Z",
+            token: "saved-token",
         });
 
         const entry = getEntry(statePath, "https://example.com", "/some/path");
         expect(entry?.id).toBe("01ARZ3NDEKTSV4RRFFQ69G5FAV");
+        expect(entry?.token).toBe("saved-token");
     });
 
     it("keeps entries for different servers separate even for the same local path", () => {
