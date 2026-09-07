@@ -115,7 +115,6 @@ export function ActionsMenu({
                                 type="button"
                                 disabled={uploading}
                                 onClick={() => {
-                                    scheduleClose();
                                     onUpload();
                                 }}
                                 className={ITEM}
