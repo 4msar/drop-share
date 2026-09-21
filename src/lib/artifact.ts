@@ -257,6 +257,11 @@ export function fileUrl(id: string, subPath: string, name: string): string {
     return `/a/${id}/${subPath}${name}`;
 }
 
+/** The URL that streams the whole artifact back as a single ZIP download. */
+export function artifactDownloadUrl(id: string): string {
+    return `/api/artifact/${encodeURIComponent(id)}/download`;
+}
+
 /**
  * The URL the preview iframe points at. Markdown gets the Worker's rendered
  * form; everything else previews its raw bytes.

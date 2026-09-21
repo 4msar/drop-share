@@ -1,5 +1,11 @@
 import { useLayoutEffect, useRef, useState } from "react";
-import { ActionIcon, EyeIcon, ShareIcon, TrashIcon, UploadIcon } from "./Icons";
+import {
+    ActionIcon,
+    DownloadIcon,
+    EyeIcon,
+    ShareIcon,
+    TrashIcon,
+} from "./Icons";
 
 interface FileActionsMenuProps {
     /** The file's (or directory's) raw URL, relative to this origin. */
@@ -156,7 +162,7 @@ export function FileActionsMenu({
                                 onClick={() => setOpen(false)}
                                 className={`${ITEM} no-underline`}
                             >
-                                <UploadIcon className="size-3.5 shrink-0 rotate-180" />
+                                <DownloadIcon className="size-3.5 shrink-0" />
                                 Download
                             </a>
                         )}

@@ -11,8 +11,10 @@ import { hasHiddenSegment, normalizeRelativePath } from "../lib/paths.js";
 import {
     deleteArtifact,
     deleteArtifactFile,
+    listAllArtifactKeys,
     listArtifactChildren,
 } from "../lib/r2.js";
+import { createArtifactZip } from "../lib/zip.js";
 
 // Files can now be updated in place (see the artifact re-upload feature), so
 // responses must always revalidate rather than being cached as immutable -
@@ -136,6 +138,70 @@ export async function handleArtifactDelete(
     const deletedCount = await deleteArtifact(env.ARTIFACTS_BUCKET, id);
     if (deletedCount === 0) return jsonError(404, "Artifact not found");
     return jsonOk({ id, deleted: true });
+}
+
+/** Turns an artifact label (or its id, as fallback) into a safe `.zip` filename. */
+function zipDownloadFilename(label: string | undefined, id: string): string {
+    const base = (label ?? "").trim() || id;
+    // Drop path separators so the name is a single filename; the
+    // Content-Disposition builder handles the remaining escaping/encoding.
+    const safe = base.replace(/[/\\]/g, "_");
+    return safe.toLowerCase().endsWith(".zip") ? safe : `${safe}.zip`;
+}
+
+/**
+ * Bundles every (non-hidden) file in an artifact into a single ZIP for
+ * download. Like serving individual file bytes, this is public: it exposes
+ * only what a visitor could already fetch one file at a time, so it isn't
+ * gated on the lock token (listings and raw reads aren't either). The hidden
+ * `.artifact.json` marker is filtered out, same as everywhere else.
+ */
+export async function handleArtifactDownload(
+    id: string,
+    env: Env,
+): Promise<Response> {
+    if (!isValidArtifactId(id)) return jsonError(404, "Artifact not found");
+
+    const [authResult, refs] = await Promise.all([
+        loadArtifactAuth(env.ARTIFACTS_BUCKET, id, null),
+        listAllArtifactKeys(env.ARTIFACTS_BUCKET, id),
+    ]);
+
+    const prefix = `${id}/`;
+    const included = refs.filter(
+        (ref) => !hasHiddenSegment(ref.key.slice(prefix.length)),
+    );
+    if (included.length === 0) return jsonError(404, "Artifact not found");
+
+    const entries = [];
+    for (const ref of included) {
+        const object = await env.ARTIFACTS_BUCKET.get(ref.key);
+        // A file listed a moment ago could be gone by now (concurrent delete);
+        // skip it rather than fail the whole download.
+        if (object === null) continue;
+        entries.push({
+            path: ref.key.slice(prefix.length),
+            data: new Uint8Array(await object.arrayBuffer()),
+        });
+    }
+    if (entries.length === 0) return jsonError(404, "Artifact not found");
+
+    const zipBytes = createArtifactZip(entries);
+    const filename = zipDownloadFilename(authResult.metadata?.label, id);
+
+    return new Response(zipBytes, {
+        status: 200,
+        headers: {
+            "Content-Type": "application/zip",
+            "Content-Disposition": contentDispositionHeader(
+                "attachment",
+                filename,
+            ),
+            "Content-Length": String(zipBytes.length),
+            "Cache-Control": "no-store",
+            "X-Content-Type-Options": "nosniff",
+        },
+    });
 }
 
 /**

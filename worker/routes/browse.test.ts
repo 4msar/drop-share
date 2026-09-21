@@ -1,4 +1,5 @@
 import { exports } from "cloudflare:workers";
+import { unzipSync } from "fflate";
 import { describe, expect, it } from "vitest";
 import { listArtifactChildren } from "../lib/r2.js";
 
@@ -324,6 +325,75 @@ describe("DELETE /api/artifact/:id", () => {
             { method: "DELETE" },
         );
         expect(response.status).toBe(404);
+    });
+});
+
+describe("GET /api/artifact/:id/download", () => {
+    it("streams the whole artifact back as a ZIP of its files", async () => {
+        const { id } = await upload("directory", [
+            { name: "index.html", content: "<h1>hi</h1>" },
+            { name: "css/style.css", content: "body{}" },
+        ]);
+
+        const response = await exports.default.fetch(
+            `https://artifacts.example.com/api/artifact/${id}/download`,
+        );
+        expect(response.status).toBe(200);
+        expect(response.headers.get("content-type")).toBe("application/zip");
+        expect(response.headers.get("content-disposition")).toContain(
+            "attachment",
+        );
+
+        const zip = unzipSync(new Uint8Array(await response.arrayBuffer()));
+        expect(Object.keys(zip).sort()).toEqual([
+            "css/style.css",
+            "index.html",
+        ]);
+        expect(new TextDecoder().decode(zip["index.html"])).toBe("<h1>hi</h1>");
+        expect(new TextDecoder().decode(zip["css/style.css"])).toBe("body{}");
+    });
+
+    it("never includes the hidden .artifact.json marker in the ZIP", async () => {
+        const { id } = await upload("file", [
+            { name: "only.txt", content: "x" },
+        ]);
+        // A brand-new artifact always has its metadata marker written.
+        const response = await exports.default.fetch(
+            `https://artifacts.example.com/api/artifact/${id}/download`,
+        );
+        const zip = unzipSync(new Uint8Array(await response.arrayBuffer()));
+        expect(Object.keys(zip)).toEqual(["only.txt"]);
+        expect(Object.keys(zip)).not.toContain(".artifact.json");
+    });
+
+    it("names the ZIP after the artifact's label", async () => {
+        const { id } = await upload("directory", [
+            { name: "site/index.html", content: "x" },
+            { name: "site/app.js", content: "y" },
+        ]);
+        const response = await exports.default.fetch(
+            `https://artifacts.example.com/api/artifact/${id}/download`,
+        );
+        // A directory upload derives its label from the shared top-level folder.
+        expect(response.headers.get("content-disposition")).toContain(
+            "site.zip",
+        );
+    });
+
+    it("404s for an artifact that doesn't exist", async () => {
+        const response = await exports.default.fetch(
+            "https://artifacts.example.com/api/artifact/01ARZ3NDEKTSV4RRFFQ69G5FAV/download",
+        );
+        expect(response.status).toBe(404);
+    });
+
+    it("405s a non-GET method on the download path", async () => {
+        const { id } = await upload("file", [{ name: "a.txt", content: "a" }]);
+        const response = await exports.default.fetch(
+            `https://artifacts.example.com/api/artifact/${id}/download`,
+            { method: "POST" },
+        );
+        expect(response.status).toBe(405);
     });
 });
 

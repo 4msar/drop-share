@@ -3,6 +3,7 @@ import { jsonError } from "./lib/http.js";
 import {
     handleArtifactBrowse,
     handleArtifactDelete,
+    handleArtifactDownload,
     handleArtifactJson,
 } from "./routes/browse.js";
 import { handleHealth } from "./routes/health.js";
@@ -19,6 +20,13 @@ function registerApiRoutes(app: Hono<{ Bindings: Env }>) {
 
     app.post("/api/upload", (c) => handleUpload(c.req.raw, c.env));
     app.all("/api/upload", methodNotAllowed);
+
+    // Registered before the bare `/api/artifact/:id` routes so this deeper path
+    // is matched by its own handler rather than the `/api/*` catch-all.
+    app.get("/api/artifact/:id/download", (c) =>
+        handleArtifactDownload(c.req.param("id"), c.env),
+    );
+    app.all("/api/artifact/:id/download", methodNotAllowed);
 
     app.get("/api/artifact/:id", (c) =>
         handleArtifactJson(

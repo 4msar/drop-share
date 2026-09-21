@@ -3,8 +3,10 @@ import { Button } from "./Button";
 import { LockDialog } from "./LockDialog";
 import { UnlockDialog } from "./UnlockDialog";
 import { useArtifactState } from "../contexts/useArtifact";
+import { artifactDownloadUrl } from "../lib/artifact";
 import {
     ActionIcon,
+    DownloadIcon,
     EditIcon,
     LockIcon,
     ShareIcon,
@@ -41,7 +43,7 @@ export function ActionsMenu({
     onUpload,
     onDelete,
 }: ActionsMenuProps) {
-    const { isRoot, canModify, locked } = useArtifactState();
+    const { id, isRoot, canModify, locked } = useArtifactState();
     const [open, setOpen] = useState(false);
     const [shareLabel, setShareLabel] = useState("Share");
     const [lockDialogOpen, setLockDialogOpen] = useState(false);
@@ -96,6 +98,15 @@ export function ActionsMenu({
                             <ShareIcon className="size-3.5 shrink-0" />
                             {shareLabel}
                         </button>
+                        <a
+                            href={artifactDownloadUrl(id)}
+                            download
+                            onClick={() => scheduleClose()}
+                            className={`${ITEM} no-underline`}
+                        >
+                            <DownloadIcon className="size-3.5 shrink-0" />
+                            Download as ZIP
+                        </a>
                         {isRoot && canModify && (
                             <button
                                 type="button"

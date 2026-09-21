@@ -585,6 +585,26 @@ describe("artifact actions", () => {
     expect(await screen.findByRole("button", { name: "Delete" })).toBeTruthy();
   });
 
+  it("offers a download-as-ZIP link pointing at the archive endpoint", async () => {
+    stubListing({ files: [file("a.txt")] });
+    await renderViewer();
+    screen.getByRole("button", { name: "More actions" }).click();
+    const zipLink = await screen.findByRole("link", {
+      name: /download as zip/i,
+    });
+    expect(zipLink.getAttribute("href")).toBe(`/api/artifact/${ID}/download`);
+    expect(zipLink.hasAttribute("download")).toBe(true);
+  });
+
+  it("keeps the download-as-ZIP link available on a locked artifact", async () => {
+    stubListing({ files: [file("a.txt")], locked: true, canModify: false });
+    await renderViewer();
+    screen.getByRole("button", { name: "More actions" }).click();
+    expect(
+      await screen.findByRole("link", { name: /download as zip/i }),
+    ).toBeTruthy();
+  });
+
   it("hides the delete control inside a subfolder, since it deletes the whole artifact", async () => {
     stubListing({ files: [file("style.css")], path: "css/" });
     await renderViewer("css/");

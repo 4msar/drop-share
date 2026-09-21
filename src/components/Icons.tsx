@@ -162,6 +162,14 @@ export const UploadIcon = (props: SVGProps<SVGSVGElement>) => (
     </Icon>
 );
 
+export const DownloadIcon = (props: SVGProps<SVGSVGElement>) => (
+    <Icon {...props}>
+        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+        <path d="m7 10 5 5 5-5" />
+        <path d="M12 15V3" />
+    </Icon>
+);
+
 export const EyeIcon = (props: SVGProps<SVGSVGElement>) => (
     <Icon {...props}>
         <path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0" />

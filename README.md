@@ -74,12 +74,13 @@ some.zip --extract`.
 Other endpoints:
 
 ```
-GET    /api/health              liveness check
-GET    /api/artifact/:id        JSON listing of an artifact's files/folders
-DELETE /api/artifact/:id        deletes every object under that artifact id
-DELETE /api/artifact/:id?path=  deletes a single file within the artifact, leaving the rest
-PATCH  /api/artifact/:id        updates label and/or protects with a token (see below)
-GET    /a/:id/                  human-facing browse/download page (see above)
+GET    /api/health                 liveness check
+GET    /api/artifact/:id           JSON listing of an artifact's files/folders
+GET    /api/artifact/:id/download  the whole artifact bundled as a single ZIP download
+DELETE /api/artifact/:id           deletes every object under that artifact id
+DELETE /api/artifact/:id?path=     deletes a single file within the artifact, leaving the rest
+PATCH  /api/artifact/:id           updates label and/or protects with a token (see below)
+GET    /a/:id/                     human-facing browse/download page (see above)
 ```
 
 ## Limits

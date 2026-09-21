@@ -1,4 +1,11 @@
-import { Unzip, UnzipInflate, UnzipPassThrough, type UnzipFile } from "fflate";
+import {
+  Unzip,
+  UnzipInflate,
+  UnzipPassThrough,
+  zipSync,
+  type UnzipFile,
+  type Zippable,
+} from "fflate";
 import { normalizeRelativePath } from "./paths.js";
 import { PayloadTooLargeError, SizeBudget } from "./validation.js";
 
@@ -17,6 +24,26 @@ export interface ExtractedFile {
 export interface ExtractLimits {
   maxTotalBytes: number;
   maxEntryCount: number;
+}
+
+export interface ArchiveEntry {
+  path: string;
+  data: Uint8Array;
+}
+
+/**
+ * Bundles an artifact's files into a single ZIP for download. Entries are
+ * stored uncompressed (level 0): an artifact's total size is already capped
+ * (MAX_ARTIFACT_SIZE_BYTES) and much of what gets uploaded is already
+ * compressed, so paying Worker CPU to re-deflate it buys little. The whole
+ * archive is built in memory, which the same size cap keeps bounded.
+ */
+export function createArtifactZip(entries: ArchiveEntry[]): Uint8Array {
+  const zippable: Zippable = {};
+  for (const entry of entries) {
+    zippable[entry.path] = entry.data;
+  }
+  return zipSync(zippable, { level: 0 });
 }
 
 interface CentralDirectoryEntry {
