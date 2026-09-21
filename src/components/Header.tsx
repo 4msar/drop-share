@@ -56,7 +56,12 @@ export function Header() {
         setUploading(true);
         reportError(null);
         try {
-            await uploadIntoArtifact(currentId, subPath, files, token);
+            await uploadIntoArtifact(
+                currentId,
+                subPath,
+                files.map((file) => ({ file, relativePath: file.name })),
+                token,
+            );
             reload();
         } catch (error) {
             reportError(

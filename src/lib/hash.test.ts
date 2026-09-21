@@ -4,6 +4,13 @@ import { hashPassword } from "./hash";
 describe("hashPassword", () => {
     it("returns a 40-character lowercase hex digest", async () => {
         const hash = await hashPassword("artifact-1", "hunter2");
+        const pass = await hashPassword(
+            "01M0YHXS3AZRN9DSRQMFS52QPE",
+            "msar#6727",
+        );
+
+        console.log({ pass });
+
         expect(hash).toMatch(/^[0-9a-f]{40}$/);
     });
 

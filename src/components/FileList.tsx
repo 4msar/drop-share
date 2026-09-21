@@ -1,13 +1,15 @@
+import { useState } from "react";
 import { Link } from "react-router";
 import type { ArtifactFile, FileSortMode } from "../lib/artifact";
-import { fileUrl, parentPath, withToken } from "../lib/artifact";
+import { fileUrl, parentPath, uploadIntoArtifact, withToken } from "../lib/artifact";
+import { filesFromDataTransfer, validateSelection } from "../lib/upload";
 import {
     ARCHIVE_EXTENSIONS,
     formatBytes,
     IMAGE_EXTENSIONS,
 } from "../lib/format";
 import { cn } from "../lib/utils";
-import { useArtifactState } from "../contexts/useArtifact";
+import { useArtifactActions, useArtifactState } from "../contexts/useArtifact";
 import {
     ArchiveIcon,
     ChevronIcon,
@@ -16,6 +18,7 @@ import {
     ImageIcon,
     ParentFolderIcon,
     PdfFileIcon,
+    UploadIcon,
 } from "./Icons";
 
 /** A glyph hint for a file row in the viewer sidebar. Cosmetic only. */
@@ -69,13 +72,59 @@ export function FileList({
     onPreview,
     open,
 }: FileListProps) {
-    const { id, subPath, token } = useArtifactState();
+    const { id, subPath, token, canModify } = useArtifactState();
+    const { reload, reportError } = useArtifactActions();
     const parent = parentPath(subPath);
+    const [dragActive, setDragActive] = useState(false);
+    const [uploading, setUploading] = useState(false);
+
+    async function onDrop(event: React.DragEvent<HTMLElement>) {
+        event.preventDefault();
+        setDragActive(false);
+        if (uploading) return;
+
+        // Check permission before touching the dropped payload - a locked
+        // artifact the current session can't modify never gets an upload.
+        if (!canModify) {
+            reportError("This artifact is locked — unlock it to add files.");
+            return;
+        }
+
+        // Capture the items synchronously; the drag event is neutralized once
+        // we await.
+        const selection = await filesFromDataTransfer(event.dataTransfer.items);
+        if (selection.files.length === 0) return;
+
+        const problem = validateSelection(selection);
+        if (problem !== null) {
+            reportError(problem);
+            return;
+        }
+
+        setUploading(true);
+        reportError(null);
+        try {
+            await uploadIntoArtifact(id, subPath, selection.files, token);
+            reload();
+        } catch (error) {
+            reportError(
+                error instanceof Error ? error.message : "Upload failed.",
+            );
+        } finally {
+            setUploading(false);
+        }
+    }
 
     return (
         <nav
             aria-label="Files in this artifact"
             className={`relative overflow-hidden border-edge transition-[max-height,width] duration-200 ease-out ${open ? "overflow-x-visible overflow-y-auto max-md:max-h-[25vh] max-md:border-b md:border-r" : "max-md:max-h-0 max-md:border-b md:w-9 md:border-r"}`}
+            onDragOver={(event) => {
+                event.preventDefault();
+                if (!uploading) setDragActive(true);
+            }}
+            onDragLeave={() => setDragActive(false)}
+            onDrop={(event) => void onDrop(event)}
         >
             {open && (
                 <div className="flex items-center justify-between border-b border-edge px-2 py-2">
@@ -171,6 +220,22 @@ export function FileList({
                     );
                 })}
             </ul>
+            {open && (dragActive || uploading) && (
+                <div
+                    aria-hidden={!uploading}
+                    role={uploading ? "status" : undefined}
+                    className="pointer-events-none absolute inset-0 z-10 grid place-items-center border-2 border-solid border-brand bg-brand-soft/95 p-4 text-center"
+                >
+                    <div className="flex flex-col items-center gap-2 text-brand">
+                        <UploadIcon className="size-8" />
+                        <span className="text-xs font-medium">
+                            {uploading
+                                ? "Uploading…"
+                                : "Drop files or folders to add"}
+                        </span>
+                    </div>
+                </div>
+            )}
             {!open && (
                 <div
                     aria-hidden="true"

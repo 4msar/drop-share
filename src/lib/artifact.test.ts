@@ -1,5 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { lockArtifact, sortFiles, type ArtifactFile } from "./artifact";
+import {
+    lockArtifact,
+    sortFiles,
+    uploadIntoArtifact,
+    type ArtifactFile,
+} from "./artifact";
 
 function file(name: string, uploaded: string): ArtifactFile {
     return {
@@ -73,8 +78,14 @@ describe("lockArtifact", () => {
             vi.fn(
                 async () =>
                     new Response(
-                        JSON.stringify({ success: false, error: "Artifact is already protected" }),
-                        { status: 409, headers: { "Content-Type": "application/json" } },
+                        JSON.stringify({
+                            success: false,
+                            error: "Artifact is already protected",
+                        }),
+                        {
+                            status: 409,
+                            headers: { "Content-Type": "application/json" },
+                        },
                     ),
             ),
         );
@@ -82,5 +93,88 @@ describe("lockArtifact", () => {
         await expect(lockArtifact("artifact-1", "derived-hash")).rejects.toThrow(
             "Artifact is already protected",
         );
+    });
+});
+
+describe("uploadIntoArtifact", () => {
+    afterEach(() => {
+        vi.unstubAllGlobals();
+    });
+
+    function okUpload() {
+        const fetchMock = vi.fn<typeof fetch>(
+            async () =>
+                new Response(JSON.stringify({ success: true }), {
+                    status: 200,
+                    headers: { "Content-Type": "application/json" },
+                }),
+        );
+        vi.stubGlobal("fetch", fetchMock);
+        return fetchMock;
+    }
+
+    it("preserves each item's relative path under the current sub-path", async () => {
+        const fetchMock = okUpload();
+
+        await uploadIntoArtifact(
+            "artifact-1",
+            "css/",
+            [
+                { file: new File(["x"], "app.css"), relativePath: "app.css" },
+                {
+                    file: new File(["y"], "logo.svg"),
+                    relativePath: "assets/logo.svg",
+                },
+            ],
+            null,
+        );
+
+        const form = fetchMock.mock.calls[0]![1]!.body as FormData;
+        expect(form.get("mode")).toBe("directory");
+        expect(form.get("id")).toBe("artifact-1");
+        const names = form.getAll("files").map((f) => (f as File).name);
+        expect(names).toEqual(["css/app.css", "css/assets/logo.svg"]);
+    });
+
+    it("sends the token as X-Artifact-Token when provided", async () => {
+        const fetchMock = okUpload();
+
+        await uploadIntoArtifact(
+            "artifact-1",
+            "",
+            [{ file: new File(["x"], "a.txt"), relativePath: "a.txt" }],
+            "derived-hash",
+        );
+
+        const headers = fetchMock.mock.calls[0]![1]!.headers as Record<
+            string,
+            string
+        >;
+        expect(headers["X-Artifact-Token"]).toBe("derived-hash");
+    });
+
+    it("throws with the server's error message on failure", async () => {
+        vi.stubGlobal(
+            "fetch",
+            vi.fn(
+                async () =>
+                    new Response(
+                        JSON.stringify({ success: false, error: "Forbidden" }),
+                        {
+                            status: 403,
+                            headers: { "Content-Type": "application/json" },
+                        },
+                    ),
+            ),
+        );
+
+        await expect(
+            uploadIntoArtifact(
+                "artifact-1",
+                "",
+                [{ file: new File(["x"], "a.txt"), relativePath: "a.txt" }],
+                null,
+            ),
+        ).rejects.toThrow("Forbidden");
     });
 });

@@ -118,6 +118,23 @@ function stubListing(
       );
     }
 
+    if (url === "/api/upload") {
+      const suppliedToken =
+        (init?.headers as Record<string, string> | undefined)?.[
+          "X-Artifact-Token"
+        ] ?? null;
+      if (locked && !canModifyWith(suppliedToken)) {
+        return new Response(
+          JSON.stringify({ success: false, error: "Forbidden" }),
+          { status: 403, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      return new Response(
+        JSON.stringify({ success: true, id: ID, url: `/a/${ID}/` }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    }
+
     if (url.startsWith("/api/artifact/")) {
       const suppliedToken = new URL(url, "http://localhost").searchParams.get(
         "token",
@@ -335,6 +352,99 @@ describe("sidebar", () => {
 
     const link = screen.getByRole("link", { name: /^blob\.bin$/ });
     expect(link.getAttribute("href")).toBe(`/a/${ID}/blob.bin`);
+  });
+});
+
+/**
+ * Builds a drag event payload whose `dataTransfer.items` mimics a flat-file
+ * drop: no entry API (so `filesFromDataTransfer` takes its `getAsFile`
+ * fallback), which is enough to exercise the sidebar's drop → upload path.
+ */
+function dropPayload(files: File[]) {
+  return {
+    dataTransfer: {
+      items: files.map((file) => ({
+        kind: "file",
+        webkitGetAsEntry: () => null,
+        getAsFile: () => file,
+      })),
+    },
+  };
+}
+
+function sidebar() {
+  return screen.getByRole("navigation", { name: /files in this artifact/i });
+}
+
+describe("sidebar drag-and-drop", () => {
+  it("uploads dropped files into the current artifact and reloads", async () => {
+    const fetchMock = stubListing({ files: [file("a.txt")], path: "css/" });
+    await renderViewer("css/");
+
+    fireEvent.drop(sidebar(), dropPayload([new File(["x"], "dropped.css")]));
+
+    await waitFor(() => {
+      const uploadCall = fetchMock.mock.calls.find(
+        (call) => String(call[0]) === "/api/upload",
+      );
+      expect(uploadCall).toBeTruthy();
+      const form = uploadCall![1]!.body as FormData;
+      expect(form.get("mode")).toBe("directory");
+      expect(form.get("id")).toBe(ID);
+      expect((form.get("files") as File).name).toBe("css/dropped.css");
+    });
+  });
+
+  it("sends the token as X-Artifact-Token when dropping onto a locked artifact it can modify", async () => {
+    const fetchMock = stubListing({
+      files: [file("a.txt")],
+      locked: true,
+      canModify: true,
+    });
+    await renderViewerEntry(`/a/${ID}/?token=my-token`);
+
+    fireEvent.drop(sidebar(), dropPayload([new File(["x"], "dropped.txt")]));
+
+    await waitFor(() => {
+      const call = fetchMock.mock.calls.find(
+        (c) => String(c[0]) === "/api/upload",
+      );
+      expect(call).toBeTruthy();
+      const headers = call![1]?.headers as Record<string, string>;
+      expect(headers["X-Artifact-Token"]).toBe("my-token");
+    });
+  });
+
+  it("refuses to upload and reports a lock error when the artifact can't be modified", async () => {
+    const fetchMock = stubListing({
+      files: [file("a.txt")],
+      locked: true,
+      canModify: false,
+    });
+    await renderViewer();
+
+    fireEvent.drop(sidebar(), dropPayload([new File(["x"], "dropped.txt")]));
+
+    expect((await screen.findByRole("alert")).textContent).toMatch(/locked/i);
+    expect(
+      fetchMock.mock.calls.some((c) => String(c[0]) === "/api/upload"),
+    ).toBe(false);
+  });
+
+  it("rejects an oversized file with a validation error and no upload", async () => {
+    const fetchMock = stubListing({ files: [file("a.txt")] });
+    await renderViewer();
+
+    const big = new File(["x"], "huge.bin");
+    Object.defineProperty(big, "size", { value: 11 * 1024 * 1024 });
+    fireEvent.drop(sidebar(), dropPayload([big]));
+
+    expect((await screen.findByRole("alert")).textContent).toMatch(
+      /maximum file size/i,
+    );
+    expect(
+      fetchMock.mock.calls.some((c) => String(c[0]) === "/api/upload"),
+    ).toBe(false);
   });
 });
 

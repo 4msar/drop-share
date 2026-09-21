@@ -105,22 +105,29 @@ export async function deleteArtifact(
     }
 }
 
+/** A file to add to an artifact, with the path it should occupy relative to the upload target. */
+export interface UploadItem {
+    file: File;
+    relativePath: string;
+}
+
 /**
  * Adds files to an existing artifact, at the directory currently being viewed.
- * Paths are prefixed with the sub-path so a file dropped into a subfolder
- * lands there rather than at the artifact root.
+ * Each item's relative path is prefixed with the sub-path, so files dropped
+ * into a subfolder land there rather than at the artifact root and dropped
+ * folders keep their nested structure.
  */
 export async function uploadIntoArtifact(
     id: string,
     subPath: string,
-    files: File[],
+    items: UploadItem[],
     token: string | null,
 ): Promise<void> {
     const form = new FormData();
     form.set("mode", "directory");
     form.set("id", id);
-    for (const file of files) {
-        form.append("files", file, `${subPath}${file.name}`);
+    for (const { file, relativePath } of items) {
+        form.append("files", file, `${subPath}${relativePath}`);
     }
 
     const response = await fetch("/api/upload", {
