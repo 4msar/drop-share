@@ -105,6 +105,30 @@ export async function deleteArtifact(
     }
 }
 
+/**
+ * Deletes a single file within an artifact. The path is the file's location
+ * relative to the artifact root (the viewed sub-path plus its name); the
+ * artifact itself and its other files are left untouched.
+ */
+export async function deleteArtifactFile(
+    id: string,
+    subPath: string,
+    name: string,
+    token: string | null,
+): Promise<void> {
+    const path = `${subPath}${name}`;
+    const response = await fetch(
+        `/api/artifact/${encodeURIComponent(id)}?path=${encodeURIComponent(path)}`,
+        { method: "DELETE", headers: tokenHeaders(token) },
+    );
+    if (!response.ok) {
+        const body = (await response.json().catch(() => null)) as {
+            error?: string;
+        } | null;
+        throw new Error(body?.error || "Failed to delete file.");
+    }
+}
+
 /** A file to add to an artifact, with the path it should occupy relative to the upload target. */
 export interface UploadItem {
     file: File;

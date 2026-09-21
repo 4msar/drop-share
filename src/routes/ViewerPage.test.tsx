@@ -54,6 +54,7 @@ function stubListing(
   const baseCanModify = initial.canModify ?? true;
   let label = initial.label;
   let requiredToken: string | null = options.requiredToken ?? null;
+  let files = initial.files ?? [];
 
   const canModifyWith = (suppliedToken: string | null) =>
     requiredToken !== null ? suppliedToken === requiredToken : baseCanModify;
@@ -136,15 +137,37 @@ function stubListing(
     }
 
     if (url.startsWith("/api/artifact/")) {
-      const suppliedToken = new URL(url, "http://localhost").searchParams.get(
-        "token",
-      );
+      const parsed = new URL(url, "http://localhost");
+      const suppliedToken = parsed.searchParams.get("token");
+
+      if (init?.method === "DELETE") {
+        const headerToken =
+          (init.headers as Record<string, string> | undefined)?.[
+            "X-Artifact-Token"
+          ] ?? null;
+        if (locked && !canModifyWith(headerToken)) {
+          return new Response(
+            JSON.stringify({ success: false, error: "Forbidden" }),
+            { status: 403, headers: { "Content-Type": "application/json" } },
+          );
+        }
+        const path = parsed.searchParams.get("path");
+        if (path) {
+          const name = path.replace(/^.*\//, "");
+          files = files.filter((f) => f.name !== name);
+        }
+        return new Response(
+          JSON.stringify({ success: true, id: ID, deleted: true }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+
       return new Response(
         JSON.stringify({
           success: true,
           id: ID,
           path: initial.path ?? "",
-          files: initial.files ?? [],
+          files,
           directories: initial.directories ?? [],
           locked,
           canModify: canModifyWith(suppliedToken),
@@ -305,20 +328,75 @@ describe("markdown handling", () => {
 });
 
 describe("sidebar", () => {
-  it("gives every file and folder its own open-in-new-tab link", async () => {
+  it("gives every file and folder an actions menu with an open-in-new-tab link", async () => {
     stubListing({ files: [file("page.html")], directories: ["assets/"] });
     await renderViewer();
 
-    const fileTab = screen.getByRole("link", {
-      name: /open page\.html in a new tab/i,
+    const fileTrigger = screen.getByRole("button", {
+      name: /actions for page\.html/i,
+    });
+    fileTrigger.click();
+    const fileTab = await screen.findByRole("menuitem", {
+      name: /open in new tab/i,
     });
     expect(fileTab.getAttribute("href")).toBe(`/a/${ID}/page.html`);
     expect(fileTab.getAttribute("target")).toBe("_blank");
+    // The file menu also offers copy-link, download and (when modifiable) delete.
+    expect(screen.getByRole("menuitem", { name: /copy link/i })).toBeTruthy();
+    expect(screen.getByRole("menuitem", { name: /download/i })).toBeTruthy();
+    expect(screen.getByRole("menuitem", { name: /^delete$/i })).toBeTruthy();
+    fileTrigger.click(); // close it before opening the folder's menu
+    await waitFor(() =>
+      expect(screen.queryByRole("menu")).toBeNull(),
+    );
 
-    const dirTab = screen.getByRole("link", {
-      name: /open assets\/ in a new tab/i,
+    screen.getByRole("button", { name: /actions for assets\//i }).click();
+    const dirTab = await screen.findByRole("menuitem", {
+      name: /open in new tab/i,
     });
     expect(dirTab.getAttribute("href")).toBe(`/a/${ID}/assets/`);
+    // A folder can't be downloaded or single-file deleted from the row menu.
+    expect(screen.queryByRole("menuitem", { name: /download/i })).toBeNull();
+    expect(screen.queryByRole("menuitem", { name: /^delete$/i })).toBeNull();
+  });
+
+  it("deletes a single file through the row actions menu and drops it from the list", async () => {
+    const fetchMock = stubListing({
+      files: [file("keep.txt"), file("gone.txt")],
+    });
+    await renderViewer();
+
+    screen.getByRole("button", { name: /actions for gone\.txt/i }).click();
+    (await screen.findByRole("menuitem", { name: /^delete$/i })).click();
+
+    await waitFor(() =>
+      expect(
+        fetchMock.mock.calls.some(
+          ([url, init]) =>
+            String(url).includes(`/api/artifact/${ID}?path=gone.txt`) &&
+            (init as RequestInit | undefined)?.method === "DELETE",
+        ),
+      ).toBe(true),
+    );
+    await waitFor(() =>
+      expect(screen.queryByRole("link", { name: "gone.txt" })).toBeNull(),
+    );
+    expect(screen.getByRole("link", { name: "keep.txt" })).toBeTruthy();
+  });
+
+  it("offers no delete in the row menu when the artifact isn't modifiable", async () => {
+    stubListing({
+      files: [file("page.html")],
+      locked: true,
+      canModify: false,
+    });
+    await renderViewer();
+
+    screen.getByRole("button", { name: /actions for page\.html/i }).click();
+    expect(
+      await screen.findByRole("menuitem", { name: /open in new tab/i }),
+    ).toBeTruthy();
+    expect(screen.queryByRole("menuitem", { name: /^delete$/i })).toBeNull();
   });
 
   it("offers no parent link at the artifact root", async () => {

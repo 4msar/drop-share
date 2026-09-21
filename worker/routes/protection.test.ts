@@ -386,6 +386,39 @@ describe("mutation authorization", () => {
     expect(after.status).toBe(404);
   });
 
+  it("rejects single-file delete on a protected artifact without the token", async () => {
+    const { id } = await upload("directory", [
+      { name: "a.txt", content: "a" },
+      { name: "b.txt", content: "b" },
+    ]);
+    await lock(id);
+
+    const response = await exports.default.fetch(
+      `${ORIGIN}/api/artifact/${id}?path=b.txt`,
+      { method: "DELETE" },
+    );
+    expect(response.status).toBe(403);
+  });
+
+  it("allows single-file delete on a protected artifact with the correct token", async () => {
+    const { id, url } = await upload("directory", [
+      { name: "a.txt", content: "a" },
+      { name: "b.txt", content: "b" },
+    ]);
+    await lock(id);
+
+    const response = await exports.default.fetch(
+      `${ORIGIN}/api/artifact/${id}?path=b.txt`,
+      { method: "DELETE", headers: { "X-Artifact-Token": DEFAULT_TOKEN } },
+    );
+    expect(response.status).toBe(200);
+
+    const gone = await exports.default.fetch(`${ORIGIN}${url}b.txt`);
+    expect(gone.status).toBe(404);
+    const kept = await exports.default.fetch(`${ORIGIN}${url}a.txt`);
+    expect(await kept.text()).toBe("a");
+  });
+
   it("rejects overwriting/removing metadata via upload-more without the current token", async () => {
     const { id } = await upload("file", [{ name: "a.txt", content: "a" }]);
     await lock(id);

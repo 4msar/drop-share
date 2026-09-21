@@ -90,6 +90,22 @@ export async function listAllArtifactKeys(
     return refs;
 }
 
+/**
+ * Deletes a single object by its full R2 key. Returns false if no object
+ * existed at that key, so the caller can answer 404 rather than reporting a
+ * phantom deletion - R2's own `delete` is silent about whether anything was
+ * there.
+ */
+export async function deleteArtifactFile(
+    bucket: R2Bucket,
+    key: string,
+): Promise<boolean> {
+    const existing = await bucket.head(key);
+    if (existing === null) return false;
+    await bucket.delete(key);
+    return true;
+}
+
 /** Deletes every object belonging to an artifact. The artifact id itself is never reused afterwards. */
 export async function deleteArtifact(
     bucket: R2Bucket,

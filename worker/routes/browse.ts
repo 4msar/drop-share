@@ -8,7 +8,11 @@ import {
 import { escapeHtml, jsonError, jsonOk } from "../lib/http.js";
 import { isValidArtifactId } from "../lib/ids.js";
 import { hasHiddenSegment, normalizeRelativePath } from "../lib/paths.js";
-import { deleteArtifact, listArtifactChildren } from "../lib/r2.js";
+import {
+    deleteArtifact,
+    deleteArtifactFile,
+    listArtifactChildren,
+} from "../lib/r2.js";
 
 // Files can now be updated in place (see the artifact re-upload feature), so
 // responses must always revalidate rather than being cached as immutable -
@@ -105,10 +109,30 @@ export async function handleArtifactDelete(
     id: string,
     env: Env,
     token: string | null,
+    rawPath?: string | null,
 ): Promise<Response> {
     if (!isValidArtifactId(id)) return jsonError(404, "Artifact not found");
     const auth = await loadArtifactAuth(env.ARTIFACTS_BUCKET, id, token);
     if (!auth.auth.canModify) return jsonError(403, "Forbidden");
+
+    // A `path` narrows the delete to a single file within the artifact; without
+    // one, the whole artifact is removed (the original behaviour).
+    if (rawPath !== undefined && rawPath !== null && rawPath !== "") {
+        const normalized = normalizeRelativePath(rawPath);
+        // The hidden-segment guard keeps the reserved `.artifact.json` marker
+        // (and any dot-file) undeletable - it's the same object serving/listing
+        // already treats as private, so it must not be reachable here either.
+        if (normalized === null || hasHiddenSegment(normalized)) {
+            return jsonError(404, "File not found");
+        }
+        const deleted = await deleteArtifactFile(
+            env.ARTIFACTS_BUCKET,
+            `${id}/${normalized}`,
+        );
+        if (!deleted) return jsonError(404, "File not found");
+        return jsonOk({ id, path: normalized, deleted: true });
+    }
+
     const deletedCount = await deleteArtifact(env.ARTIFACTS_BUCKET, id);
     if (deletedCount === 0) return jsonError(404, "Artifact not found");
     return jsonOk({ id, deleted: true });

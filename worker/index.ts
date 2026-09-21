@@ -34,6 +34,7 @@ function registerApiRoutes(app: Hono<{ Bindings: Env }>) {
             c.req.param("id"),
             c.env,
             c.req.header("X-Artifact-Token") ?? null,
+            c.req.query("path") ?? null,
         ),
     );
 

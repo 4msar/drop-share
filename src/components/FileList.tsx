@@ -1,7 +1,14 @@
 import { useState } from "react";
 import { Link } from "react-router";
 import type { ArtifactFile, FileSortMode } from "../lib/artifact";
-import { fileUrl, parentPath, uploadIntoArtifact, withToken } from "../lib/artifact";
+import {
+    deleteArtifactFile,
+    fileUrl,
+    parentPath,
+    uploadIntoArtifact,
+    withToken,
+} from "../lib/artifact";
+import { FileActionsMenu } from "./FileActionsMenu";
 import { filesFromDataTransfer, validateSelection } from "../lib/upload";
 import {
     ARCHIVE_EXTENSIONS,
@@ -37,22 +44,6 @@ const ROW =
 const NAME =
     "flex-1 truncate break-all text-xs no-underline hover:underline transition-all";
 
-/** A small "open in its own tab" affordance, separate from the preview click. */
-function OpenInTab({ href, label }: { href: string; label: string }) {
-    return (
-        <a
-            className="grid size-6 shrink-0 place-items-center rounded-sm text-sm text-body/50 no-underline transition-all hover:bg-brand-soft hover:text-brand focus-visible:bg-brand-soft focus-visible:text-brand focus-visible:outline-none"
-            href={href}
-            target="_blank"
-            rel="noopener noreferrer"
-            aria-label={`Open ${label} in a new tab`}
-            title="Open in new tab"
-        >
-            ↗
-        </a>
-    );
-}
-
 interface FileListProps {
     files: ArtifactFile[];
     directories: string[];
@@ -77,6 +68,29 @@ export function FileList({
     const parent = parentPath(subPath);
     const [dragActive, setDragActive] = useState(false);
     const [uploading, setUploading] = useState(false);
+    const [deletingName, setDeletingName] = useState<string | null>(null);
+
+    async function onDeleteFile(file: ArtifactFile) {
+        if (
+            !window.confirm(
+                `Delete "${file.name}" permanently? This cannot be undone.`,
+            )
+        )
+            return;
+
+        setDeletingName(file.name);
+        reportError(null);
+        try {
+            await deleteArtifactFile(id, subPath, file.name, token);
+            reload();
+        } catch (error) {
+            reportError(
+                error instanceof Error ? error.message : "Failed to delete file.",
+            );
+        } finally {
+            setDeletingName(null);
+        }
+    }
 
     async function onDrop(event: React.DragEvent<HTMLElement>) {
         event.preventDefault();
@@ -174,9 +188,10 @@ export function FileList({
                         >
                             {dir}
                         </Link>
-                        <OpenInTab
+                        <FileActionsMenu
                             href={`/a/${id}/${subPath}${dir}`}
                             label={dir}
+                            canDelete={false}
                         />
                     </li>
                 ))}
@@ -215,7 +230,14 @@ export function FileList({
                             <span className="shrink-0 text-xs text-body/70">
                                 {formatBytes(file.size)}
                             </span>
-                            <OpenInTab href={href} label={file.name} />
+                            <FileActionsMenu
+                                href={href}
+                                label={file.name}
+                                downloadName={file.name}
+                                canDelete={canModify}
+                                deleting={deletingName === file.name}
+                                onDelete={() => void onDeleteFile(file)}
+                            />
                         </li>
                     );
                 })}

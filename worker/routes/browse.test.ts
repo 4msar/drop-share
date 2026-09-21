@@ -261,6 +261,70 @@ describe("DELETE /api/artifact/:id", () => {
         const next = await upload("file", [{ name: "once.txt", content: "x" }]);
         expect(next.id).not.toBe(id);
     });
+
+    it("deletes only the named file when a ?path is given, leaving siblings intact", async () => {
+        const { id, url } = await upload("directory", [
+            { name: "keep.txt", content: "keep" },
+            { name: "dir/gone.txt", content: "gone" },
+        ]);
+
+        const deleteResponse = await exports.default.fetch(
+            `https://artifacts.example.com/api/artifact/${id}?path=${encodeURIComponent("dir/gone.txt")}`,
+            { method: "DELETE" },
+        );
+        expect(deleteResponse.status).toBe(200);
+        expect(await deleteResponse.json()).toMatchObject({
+            deleted: true,
+            path: "dir/gone.txt",
+        });
+
+        const gone = await exports.default.fetch(
+            `https://artifacts.example.com${url}dir/gone.txt`,
+        );
+        expect(gone.status).toBe(404);
+        const keep = await exports.default.fetch(
+            `https://artifacts.example.com${url}keep.txt`,
+        );
+        expect(await keep.text()).toBe("keep");
+    });
+
+    it("404s when the named file doesn't exist", async () => {
+        const { id } = await upload("file", [
+            { name: "here.txt", content: "x" },
+        ]);
+        const response = await exports.default.fetch(
+            `https://artifacts.example.com/api/artifact/${id}?path=nope.txt`,
+            { method: "DELETE" },
+        );
+        expect(response.status).toBe(404);
+    });
+
+    it("refuses to delete the hidden metadata marker via ?path", async () => {
+        const { id } = await upload("file", [
+            { name: "real.txt", content: "x" },
+        ]);
+        const response = await exports.default.fetch(
+            `https://artifacts.example.com/api/artifact/${id}?path=${encodeURIComponent(".artifact.json")}`,
+            { method: "DELETE" },
+        );
+        expect(response.status).toBe(404);
+        // The artifact itself is untouched - the marker still gates it.
+        const listing = await exports.default.fetch(
+            `https://artifacts.example.com/api/artifact/${id}`,
+        );
+        expect(listing.status).toBe(200);
+    });
+
+    it("rejects a path-traversal attempt in ?path", async () => {
+        const { id } = await upload("file", [
+            { name: "safe.txt", content: "x" },
+        ]);
+        const response = await exports.default.fetch(
+            `https://artifacts.example.com/api/artifact/${id}?path=${encodeURIComponent("../../etc/passwd")}`,
+            { method: "DELETE" },
+        );
+        expect(response.status).toBe(404);
+    });
 });
 
 describe("GET /api/artifact/:id", () => {
