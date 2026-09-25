@@ -14,6 +14,7 @@ import {
     listAllArtifactKeys,
     listArtifactChildren,
 } from "../lib/r2.js";
+import { slugifyFileName } from "../lib/slugify.js";
 import { createArtifactZip } from "../lib/zip.js";
 
 // Files can now be updated in place (see the artifact re-upload feature), so
@@ -138,6 +139,86 @@ export async function handleArtifactDelete(
     const deletedCount = await deleteArtifact(env.ARTIFACTS_BUCKET, id);
     if (deletedCount === 0) return jsonError(404, "Artifact not found");
     return jsonOk({ id, deleted: true });
+}
+
+/**
+ * Renames a single file within an artifact. The requested name is always
+ * slugified server-side (never trusted as-is) and rejected with `409` if the
+ * resulting name collides with a sibling file - the caller finds out the
+ * rename didn't happen rather than silently overwriting something.
+ */
+export async function handleArtifactRename(
+    id: string,
+    env: Env,
+    token: string | null,
+    body: unknown,
+): Promise<Response> {
+    if (!isValidArtifactId(id)) return jsonError(404, "Artifact not found");
+
+    const auth = await loadArtifactAuth(env.ARTIFACTS_BUCKET, id, token);
+    if (!auth.auth.canModify) return jsonError(403, "Forbidden");
+
+    const request = (body && typeof body === "object" ? body : {}) as {
+        path?: unknown;
+        newName?: unknown;
+    };
+    if (
+        typeof request.path !== "string" ||
+        typeof request.newName !== "string"
+    ) {
+        return jsonError(400, "A file path and new name are required");
+    }
+
+    const normalized = normalizeRelativePath(request.path);
+    // Same hidden-segment guard as delete: the reserved `.artifact.json`
+    // marker (and any dot-file) must stay unreachable here too.
+    if (normalized === null || hasHiddenSegment(normalized)) {
+        return jsonError(404, "File not found");
+    }
+
+    const slugName = slugifyFileName(request.newName);
+    if (slugName === null) {
+        return jsonError(
+            400,
+            "New name must contain at least one letter or number",
+        );
+    }
+
+    const lastSlash = normalized.lastIndexOf("/");
+    const dir = lastSlash === -1 ? "" : normalized.slice(0, lastSlash + 1);
+    const newRelativePath = `${dir}${slugName}`;
+
+    const oldKey = `${id}/${normalized}`;
+    const newKey = `${id}/${newRelativePath}`;
+    if (newKey === oldKey) {
+        return jsonOk({ id, path: normalized, renamedTo: normalized });
+    }
+
+    const existing = await env.ARTIFACTS_BUCKET.head(newKey);
+    if (existing !== null) {
+        return jsonError(409, `"${slugName}" already exists in this folder`);
+    }
+
+    // R2 has no copy/move primitive, so a rename is a get, a put under the
+    // new key, then a delete of the old one.
+    const object = await env.ARTIFACTS_BUCKET.get(oldKey);
+    if (object === null) return jsonError(404, "File not found");
+
+    await env.ARTIFACTS_BUCKET.put(newKey, object.body, {
+        // Recomputed from the new extension rather than copied from the old
+        // object's metadata - Content-Type stays server-derived even across
+        // a name (and possibly extension) change.
+        httpMetadata: { contentType: getContentType(slugName) },
+    });
+    await env.ARTIFACTS_BUCKET.delete(oldKey);
+
+    const response = jsonOk({
+        id,
+        path: normalized,
+        renamedTo: newRelativePath,
+    });
+    response.headers.set("Cache-Control", "no-store");
+    return response;
 }
 
 /** Turns an artifact label (or its id, as fallback) into a safe `.zip` filename. */

@@ -5,6 +5,7 @@ import {
     handleArtifactDelete,
     handleArtifactDownload,
     handleArtifactJson,
+    handleArtifactRename,
 } from "./routes/browse.js";
 import { handleHealth } from "./routes/health.js";
 import { handleArtifactUpdate } from "./routes/update.js";
@@ -27,6 +28,19 @@ function registerApiRoutes(app: Hono<{ Bindings: Env }>) {
         handleArtifactDownload(c.req.param("id"), c.env),
     );
     app.all("/api/artifact/:id/download", methodNotAllowed);
+
+    // Also registered before the bare `/api/artifact/:id` routes, same reason
+    // as `/download` above.
+    app.patch("/api/artifact/:id/file", async (c) => {
+        const body = await c.req.json().catch(() => null);
+        return handleArtifactRename(
+            c.req.param("id"),
+            c.env,
+            c.req.header("X-Artifact-Token") ?? null,
+            body,
+        );
+    });
+    app.all("/api/artifact/:id/file", methodNotAllowed);
 
     app.get("/api/artifact/:id", (c) =>
         handleArtifactJson(

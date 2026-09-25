@@ -5,6 +5,7 @@ import {
     deleteArtifactFile,
     fileUrl,
     parentPath,
+    renameArtifactFile,
     uploadIntoArtifact,
     withToken,
 } from "../lib/artifact";
@@ -69,6 +70,27 @@ export function FileList({
     const [dragActive, setDragActive] = useState(false);
     const [uploading, setUploading] = useState(false);
     const [deletingName, setDeletingName] = useState<string | null>(null);
+    const [renamingName, setRenamingName] = useState<string | null>(null);
+
+    async function onRenameFile(file: ArtifactFile) {
+        const input = window.prompt("Rename file to:", file.name);
+        if (input === null) return;
+        const trimmed = input.trim();
+        if (trimmed === "" || trimmed === file.name) return;
+
+        setRenamingName(file.name);
+        reportError(null);
+        try {
+            await renameArtifactFile(id, subPath, file.name, trimmed, token);
+            reload();
+        } catch (error) {
+            reportError(
+                error instanceof Error ? error.message : "Failed to rename file.",
+            );
+        } finally {
+            setRenamingName(null);
+        }
+    }
 
     async function onDeleteFile(file: ArtifactFile) {
         if (
@@ -234,6 +256,9 @@ export function FileList({
                                 href={href}
                                 label={file.name}
                                 downloadName={file.name}
+                                canRename={canModify}
+                                renaming={renamingName === file.name}
+                                onRename={() => void onRenameFile(file)}
                                 canDelete={canModify}
                                 deleting={deletingName === file.name}
                                 onDelete={() => void onDeleteFile(file)}

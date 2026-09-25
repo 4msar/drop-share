@@ -328,6 +328,150 @@ describe("DELETE /api/artifact/:id", () => {
     });
 });
 
+function renameRequest(
+    id: string,
+    body: Record<string, unknown>,
+    headers?: Record<string, string>,
+): Request {
+    return new Request(
+        `https://artifacts.example.com/api/artifact/${id}/file`,
+        {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json", ...headers },
+            body: JSON.stringify(body),
+        },
+    );
+}
+
+describe("PATCH /api/artifact/:id/file", () => {
+    it("renames a file, slugifying the requested name", async () => {
+        const { id, url } = await upload("file", [
+            { name: "old.txt", content: "hi" },
+        ]);
+
+        const response = await exports.default.fetch(
+            renameRequest(id, { path: "old.txt", newName: "My New Name!.txt" }),
+        );
+        expect(response.status).toBe(200);
+        expect(await response.json()).toMatchObject({
+            renamedTo: "my-new-name.txt",
+        });
+
+        const renamed = await exports.default.fetch(
+            `https://artifacts.example.com${url}my-new-name.txt`,
+        );
+        expect(await renamed.text()).toBe("hi");
+        const gone = await exports.default.fetch(
+            `https://artifacts.example.com${url}old.txt`,
+        );
+        expect(gone.status).toBe(404);
+    });
+
+    it("keeps a renamed file within its own subdirectory", async () => {
+        const { id, url } = await upload("directory", [
+            { name: "dir/old.txt", content: "hi" },
+        ]);
+
+        const response = await exports.default.fetch(
+            renameRequest(id, { path: "dir/old.txt", newName: "New Name.txt" }),
+        );
+        expect(response.status).toBe(200);
+        expect(await response.json()).toMatchObject({
+            renamedTo: "dir/new-name.txt",
+        });
+
+        const renamed = await exports.default.fetch(
+            `https://artifacts.example.com${url}dir/new-name.txt`,
+        );
+        expect(await renamed.text()).toBe("hi");
+    });
+
+    it("recomputes Content-Type from the new extension rather than keeping the old one", async () => {
+        const { id, url } = await upload("file", [
+            { name: "note.txt", content: "hi" },
+        ]);
+
+        await exports.default.fetch(
+            renameRequest(id, { path: "note.txt", newName: "note.json" }),
+        );
+        const renamed = await exports.default.fetch(
+            `https://artifacts.example.com${url}note.json`,
+        );
+        expect(renamed.headers.get("content-type")).toBe(
+            "application/json; charset=utf-8",
+        );
+    });
+
+    it("rejects the rename with 409 when the slugified name collides with a sibling file", async () => {
+        const { id } = await upload("directory", [
+            { name: "taken.txt", content: "a" },
+            { name: "old.txt", content: "b" },
+        ]);
+
+        const response = await exports.default.fetch(
+            renameRequest(id, { path: "old.txt", newName: "Taken.txt" }),
+        );
+        expect(response.status).toBe(409);
+
+        const original = await exports.default.fetch(
+            `https://artifacts.example.com/api/artifact/${id}`,
+        );
+        const listing = (await original.json()) as {
+            files: { name: string }[];
+        };
+        expect(listing.files.map((file) => file.name).sort()).toEqual([
+            "old.txt",
+            "taken.txt",
+        ]);
+    });
+
+    it("404s when the source file doesn't exist", async () => {
+        const { id } = await upload("file", [
+            { name: "here.txt", content: "x" },
+        ]);
+        const response = await exports.default.fetch(
+            renameRequest(id, { path: "nope.txt", newName: "new.txt" }),
+        );
+        expect(response.status).toBe(404);
+    });
+
+    it("400s when the new name slugifies to nothing usable", async () => {
+        const { id } = await upload("file", [
+            { name: "here.txt", content: "x" },
+        ]);
+        const response = await exports.default.fetch(
+            renameRequest(id, { path: "here.txt", newName: "!!!" }),
+        );
+        expect(response.status).toBe(400);
+    });
+
+    it("refuses to rename the hidden metadata marker", async () => {
+        const { id } = await upload("file", [
+            { name: "real.txt", content: "x" },
+        ]);
+        const response = await exports.default.fetch(
+            renameRequest(id, {
+                path: ".artifact.json",
+                newName: "exposed.json",
+            }),
+        );
+        expect(response.status).toBe(404);
+    });
+
+    it("rejects a path-traversal attempt in the source path", async () => {
+        const { id } = await upload("file", [
+            { name: "safe.txt", content: "x" },
+        ]);
+        const response = await exports.default.fetch(
+            renameRequest(id, {
+                path: "../../etc/passwd",
+                newName: "new.txt",
+            }),
+        );
+        expect(response.status).toBe(404);
+    });
+});
+
 describe("GET /api/artifact/:id/download", () => {
     it("streams the whole artifact back as a ZIP of its files", async () => {
         const { id } = await upload("directory", [

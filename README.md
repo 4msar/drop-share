@@ -80,6 +80,7 @@ GET    /api/artifact/:id/download  the whole artifact bundled as a single ZIP do
 DELETE /api/artifact/:id           deletes every object under that artifact id
 DELETE /api/artifact/:id?path=     deletes a single file within the artifact, leaving the rest
 PATCH  /api/artifact/:id           updates label and/or protects with a token (see below)
+PATCH  /api/artifact/:id/file      renames a single file, slugifying the name server-side
 GET    /a/:id/                     human-facing browse/download page (see above)
 ```
 
@@ -186,6 +187,7 @@ GET    /api/artifact/:id?token=<token>        (token is optional even when locke
 POST   /api/upload                            X-Artifact-Token: <token>   (when updating an existing artifact)
 DELETE /api/artifact/:id                      X-Artifact-Token: <token>
 PATCH  /api/artifact/:id                      X-Artifact-Token: <token>   (relabeling, once locked)
+PATCH  /api/artifact/:id/file                 X-Artifact-Token: <token>   (renaming a file, once locked)
 ```
 
 A missing or incorrect token on a protected artifact's mutation gets `403`.
@@ -323,10 +325,11 @@ drop-share/
 │   │   ├── zip.ts             central-directory validation + streaming safe extraction
 │   │   ├── r2.ts               R2 listing/delete helpers
 │   │   ├── artifactMeta.ts    .artifact.json parsing, token auth-state derivation
+│   │   ├── slugify.ts         filename slugification used by file rename
 │   │   └── http.ts            jsonOk/jsonError/escapeHtml
 │   └── routes/
 │       ├── upload.ts          POST /api/upload (all four modes)
-│       ├── browse.ts          file bytes, markdown render, listing JSON, delete
+│       ├── browse.ts          file bytes, markdown render, listing JSON, delete, rename
 │       ├── update.ts          PATCH /api/artifact/:id (relabel and/or lock)
 │       └── health.ts
 ├── src/                       React + Tailwind client (Vite)

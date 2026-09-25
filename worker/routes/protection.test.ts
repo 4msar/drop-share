@@ -419,6 +419,42 @@ describe("mutation authorization", () => {
     expect(await kept.text()).toBe("a");
   });
 
+  it("rejects a file rename on a protected artifact without the token", async () => {
+    const { id } = await upload("file", [{ name: "a.txt", content: "a" }]);
+    await lock(id);
+
+    const response = await exports.default.fetch(
+      `${ORIGIN}/api/artifact/${id}/file`,
+      {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path: "a.txt", newName: "b.txt" }),
+      },
+    );
+    expect(response.status).toBe(403);
+  });
+
+  it("allows a file rename on a protected artifact with the correct token", async () => {
+    const { id, url } = await upload("file", [{ name: "a.txt", content: "a" }]);
+    await lock(id);
+
+    const response = await exports.default.fetch(
+      `${ORIGIN}/api/artifact/${id}/file`,
+      {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Artifact-Token": DEFAULT_TOKEN,
+        },
+        body: JSON.stringify({ path: "a.txt", newName: "b.txt" }),
+      },
+    );
+    expect(response.status).toBe(200);
+
+    const renamed = await exports.default.fetch(`${ORIGIN}${url}b.txt`);
+    expect(await renamed.text()).toBe("a");
+  });
+
   it("rejects overwriting/removing metadata via upload-more without the current token", async () => {
     const { id } = await upload("file", [{ name: "a.txt", content: "a" }]);
     await lock(id);

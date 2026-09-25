@@ -129,6 +129,38 @@ export async function deleteArtifactFile(
     }
 }
 
+/**
+ * Renames a single file within an artifact. The server always slugifies the
+ * requested name and rejects the rename (409) if the result collides with a
+ * sibling file, so the caller finds out rather than silently overwriting it.
+ */
+export async function renameArtifactFile(
+    id: string,
+    subPath: string,
+    name: string,
+    newName: string,
+    token: string | null,
+): Promise<void> {
+    const path = `${subPath}${name}`;
+    const response = await fetch(
+        `/api/artifact/${encodeURIComponent(id)}/file`,
+        {
+            method: "PATCH",
+            headers: {
+                "Content-Type": "application/json",
+                ...tokenHeaders(token),
+            },
+            body: JSON.stringify({ path, newName }),
+        },
+    );
+    if (!response.ok) {
+        const body = (await response.json().catch(() => null)) as {
+            error?: string;
+        } | null;
+        throw new Error(body?.error || "Failed to rename file.");
+    }
+}
+
 /** A file to add to an artifact, with the path it should occupy relative to the upload target. */
 export interface UploadItem {
     file: File;

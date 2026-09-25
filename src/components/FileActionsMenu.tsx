@@ -2,6 +2,7 @@ import { useLayoutEffect, useRef, useState } from "react";
 import {
     ActionIcon,
     DownloadIcon,
+    EditIcon,
     EyeIcon,
     ShareIcon,
     TrashIcon,
@@ -17,6 +18,12 @@ interface FileActionsMenuProps {
      * Directories omit it - there's nothing single to download.
      */
     downloadName?: string;
+    /** Whether the current session may rename (i.e. the artifact is modifiable). */
+    canRename?: boolean;
+    /** Invoked when the user picks a new name; only reachable when `canRename`. */
+    onRename?: () => void;
+    /** Disables the Rename item while a rename is already in flight. */
+    renaming?: boolean;
     /** Whether the current session may delete (i.e. the artifact is modifiable). */
     canDelete: boolean;
     /** Invoked when the user confirms deletion; only reachable when `canDelete`. */
@@ -43,6 +50,9 @@ export function FileActionsMenu({
     href,
     label,
     downloadName,
+    canRename,
+    onRename,
+    renaming,
     canDelete,
     onDelete,
     deleting,
@@ -54,7 +64,11 @@ export function FileActionsMenu({
 
     // Item count drives the height estimate that decides whether the menu
     // opens below the trigger or flips above it near the viewport's bottom.
-    const itemCount = 2 + (downloadName ? 1 : 0) + (canDelete ? 1 : 0);
+    const itemCount =
+        2 +
+        (downloadName ? 1 : 0) +
+        (canRename ? 1 : 0) +
+        (canDelete ? 1 : 0);
     const estimatedHeight = itemCount * 32 + 12;
 
     useLayoutEffect(() => {
@@ -165,6 +179,21 @@ export function FileActionsMenu({
                                 <DownloadIcon className="size-3.5 shrink-0" />
                                 Download
                             </a>
+                        )}
+                        {canRename && (
+                            <button
+                                type="button"
+                                role="menuitem"
+                                disabled={renaming}
+                                onClick={() => {
+                                    setOpen(false);
+                                    onRename?.();
+                                }}
+                                className={ITEM}
+                            >
+                                <EditIcon className="size-3.5 shrink-0" />
+                                {renaming ? "Renaming…" : "Rename"}
+                            </button>
                         )}
                         {canDelete && (
                             <button
