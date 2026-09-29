@@ -102,6 +102,7 @@ export function Header() {
             <div className="flex min-w-0 items-center gap-1">
                 <Link
                     to="/"
+                    title={`v${__APP_VERSION__}`}
                     aria-label="Drop Share home"
                     className="grid size-7 shrink-0 place-items-center rounded-md border border-edge bg-panel text-heading transition-colors hover:border-brand-edge"
                 >
@@ -121,7 +122,9 @@ export function Header() {
                     hidden
                     aria-label="Add files to this folder"
                     onChange={(event) => {
-                        void onUploadFiles(Array.from(event.target.files ?? []));
+                        void onUploadFiles(
+                            Array.from(event.target.files ?? []),
+                        );
                     }}
                 />
                 <Button

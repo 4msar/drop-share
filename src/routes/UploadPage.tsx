@@ -116,7 +116,12 @@ export default function UploadPage() {
     return (
         <main className="mx-auto flex min-h-dvh w-full max-w-6xl flex-col border-edge px-5 pt-6 pb-10 text-center md:border-x">
             <header className="mx-auto mb-6 flex w-full max-w-5xl items-center justify-center gap-2">
-                <img src="/logo.svg" alt="" className="size-8" />
+                <img
+                    src="/logo.svg"
+                    alt="Drop-Share"
+                    title={`v${__APP_VERSION__}`}
+                    className="size-8"
+                />
                 <span className="text-[15px] font-semibold tracking-tight text-heading">
                     Drop Share
                 </span>
