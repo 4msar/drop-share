@@ -113,7 +113,6 @@ export function PreviewPane({
             ) : (
                 <iframe
                     title="File preview"
-                    sandbox="allow-scripts allow-same-origin allow-forms"
                     allow="fullscreen; clipboard-write"
                     allowFullScreen
                     // Keying on the URL makes a re-preview of the same file remount
