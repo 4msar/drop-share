@@ -191,6 +191,13 @@ export const CheckIcon = (props: SVGProps<SVGSVGElement>) => (
     </Icon>
 );
 
+export const CloseIcon = (props: SVGProps<SVGSVGElement>) => (
+    <Icon {...props}>
+        <path d="M18 6 6 18" />
+        <path d="m6 6 12 12" />
+    </Icon>
+);
+
 export const FullscreenEnterIcon = (props: SVGProps<SVGSVGElement>) => (
     <Icon {...props}>
         <path d="M8 3H3v5" />

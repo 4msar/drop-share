@@ -2,7 +2,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AppProviders } from "../contexts/AppProviders";
-import { addRecentItem } from "../lib/recent";
+import { addRecentItem, getRecentItems } from "../lib/recent";
 import type { SelectedFile, UploadMode } from "../lib/upload";
 import UploadPage from "./UploadPage";
 
@@ -217,6 +217,23 @@ describe("recent artifacts", () => {
 
         const link = screen.getByRole("link", { name: /abc123/i });
         expect(link.getAttribute("href")).toBe("/a/abc123/");
+    });
+
+    it("removes a single artifact from the recent list", () => {
+        addRecentItem("abc123", Date.now());
+        addRecentItem("def456", Date.now());
+        renderPage();
+
+        fireEvent.click(
+            screen.getByRole("button", { name: /^recent artifacts$/i }),
+        );
+        fireEvent.click(
+            screen.getByRole("button", { name: /remove abc123 from recent/i }),
+        );
+
+        expect(screen.queryByRole("link", { name: /abc123/i })).toBeNull();
+        expect(screen.getByRole("link", { name: /def456/i })).toBeTruthy();
+        expect(getRecentItems().map((item) => item.id)).toEqual(["def456"]);
     });
 
     it("closes the drawer when clicking the backdrop behind it", () => {

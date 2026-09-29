@@ -11,7 +11,7 @@ import {
 export function RecentDrawer() {
     const [open, setOpen] = useState(false);
     const items = useRecentItems();
-    const { clearItems } = useRecentItemsActions();
+    const { clearItems, removeItem } = useRecentItemsActions();
 
     const handleClearRecentItems = () => {
         clearItems();
@@ -62,6 +62,7 @@ export function RecentDrawer() {
                 <hr className="border-edge" />
                 <RecentList
                     items={items}
+                    onRemove={removeItem}
                     className="overflow-y-auto scrollbar-none"
                 />
             </aside>

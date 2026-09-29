@@ -9,7 +9,7 @@ export const Footer = () => {
                 <a
                     className="text-body no-underline"
                     title="Made with ❤️ by msar.dev"
-                    href="https://msar.dev"
+                    href="https://support.msar.dev"
                     target="_blank"
                     rel="noopener noreferrer"
                 >

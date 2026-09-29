@@ -1173,6 +1173,8 @@ describe("recent artifacts", () => {
       screen.getByRole("link", { name: /other-artifact/i }),
     );
     expect(link.getAttribute("href")).toBe("/a/other-artifact/");
+    // Removing recent items is only offered from the upload page's drawer.
+    expect(screen.queryByRole("button", { name: /from recent/i })).toBeNull();
   });
 
   it("auto-injects a saved token when switching to a recent artifact that was previously locked", async () => {

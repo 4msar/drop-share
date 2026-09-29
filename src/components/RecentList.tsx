@@ -1,19 +1,24 @@
 import { Link } from "react-router";
 import { withToken } from "../lib/artifact";
 import { formatRelativeTime } from "../lib/format";
+import { cn } from "../lib/utils";
 import type { RecentItem } from "../lib/recent";
 import { getStoredToken } from "../lib/tokens";
+import { CloseIcon } from "./Icons";
 
 interface RecentListProps {
     items: RecentItem[];
     currentId?: string;
     onSelect?: (id: string) => void;
+    /** When given, each item gets a button that removes it from the list. */
+    onRemove?: (id: string) => void;
 }
 
 export function RecentList({
     items,
     currentId,
     onSelect,
+    onRemove,
     className = "",
 }: RecentListProps & { className?: string }) {
     return (
@@ -34,11 +39,14 @@ export function RecentList({
                     </>
                 );
                 return (
-                    <li key={item.id}>
+                    <li key={item.id} className="relative">
                         {isCurrent ? (
                             <span
                                 aria-current="page"
-                                className="block rounded-lg px-3 py-2 text-left text-brand bg-panel"
+                                className={cn(
+                                    "block rounded-lg px-3 py-2 text-left text-brand bg-panel",
+                                    onRemove && "pr-9",
+                                )}
                             >
                                 {label}
                             </span>
@@ -49,10 +57,24 @@ export function RecentList({
                                     getStoredToken(item.id),
                                 )}
                                 onClick={() => onSelect?.(item.id)}
-                                className="block rounded-lg transition-all px-3 py-2 text-left no-underline hover:bg-brand-soft"
+                                className={cn(
+                                    "block rounded-lg transition-all px-3 py-2 text-left no-underline hover:bg-brand-soft",
+                                    onRemove && "pr-9",
+                                )}
                             >
                                 {label}
                             </Link>
+                        )}
+                        {onRemove && (
+                            <button
+                                type="button"
+                                aria-label={`Remove ${item.label || item.id} from recent`}
+                                title="Remove from recent"
+                                onClick={() => onRemove(item.id)}
+                                className="absolute top-1/2 right-2 grid size-6 -translate-y-1/2 place-items-center rounded-md text-body hover:bg-brand-soft hover:text-brand"
+                            >
+                                <CloseIcon className="size-3.5" />
+                            </button>
                         )}
                     </li>
                 );
