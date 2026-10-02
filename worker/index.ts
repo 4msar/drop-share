@@ -6,6 +6,7 @@ import {
     handleArtifactDownload,
     handleArtifactJson,
     handleArtifactRename,
+    withNotFoundPage,
 } from "./routes/browse.js";
 import { handleHealth } from "./routes/health.js";
 import { handleArtifactUpdate } from "./routes/update.js";
@@ -129,8 +130,8 @@ function shareBrowse(request: Request, env: Env): Promise<Response> | Response {
 }
 
 function registerArtifactBrowseRoutes(app: Hono<{ Bindings: Env }>) {
-    app.on(["GET", "HEAD"], ["/a/:id", "/a/:id/*"], (c) =>
-        browse(c.req.raw, c.env),
+    app.on(["GET", "HEAD"], ["/a/:id", "/a/:id/*"], async (c) =>
+        withNotFoundPage(await browse(c.req.raw, c.env), c.req.raw, c.env),
     );
 
     // An array of paths is only supported by app.on(), not by the app.all()
@@ -138,8 +139,12 @@ function registerArtifactBrowseRoutes(app: Hono<{ Bindings: Env }>) {
     app.all("/a/:id", methodNotAllowed);
     app.all("/a/:id/*", methodNotAllowed);
 
-    app.on(["GET", "HEAD"], ["/s/:seg", "/s/:seg/*"], (c) =>
-        shareBrowse(c.req.raw, c.env),
+    app.on(["GET", "HEAD"], ["/s/:seg", "/s/:seg/*"], async (c) =>
+        withNotFoundPage(
+            await shareBrowse(c.req.raw, c.env),
+            c.req.raw,
+            c.env,
+        ),
     );
     app.all("/s/:seg", methodNotAllowed);
     app.all("/s/:seg/*", methodNotAllowed);

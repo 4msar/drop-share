@@ -88,6 +88,37 @@ export async function handleArtifactBrowse(
 }
 
 /**
+ * A browser navigating straight to an artifact URL (address bar, clicked
+ * link) that turns out to be missing - or private without a valid token -
+ * gets the SPA shell with a 404 status rather than raw JSON, so the viewer's
+ * own "Artifact unavailable" page renders. The shell's listing fetch 404s
+ * the same way, so it reveals nothing the JSON didn't. Only top-level
+ * document navigations qualify (`Sec-Fetch-Dest: document`): API clients,
+ * curl, and subresource/iframe loads (a missing file in the preview pane, or
+ * an asset a shared page references) keep the plain JSON 404.
+ */
+export async function withNotFoundPage(
+    response: Response,
+    request: Request,
+    env: Env,
+): Promise<Response> {
+    if (
+        response.status !== 404 ||
+        request.headers.get("Sec-Fetch-Dest") !== "document"
+    ) {
+        return response;
+    }
+    const shell = await env.ASSETS.fetch(
+        new Request(new URL("/", request.url), { method: request.method }),
+    );
+    if (!shell.ok) return response;
+    const headers = new Headers(shell.headers);
+    headers.set("Cache-Control", "no-store");
+    headers.set("X-Robots-Tag", "noindex");
+    return new Response(shell.body, { status: 404, headers });
+}
+
+/**
  * Normalises a caller-supplied subdirectory path into an R2 prefix segment:
  * "" for the artifact root, otherwise a validated, slash-terminated path.
  * Returns null for anything that escapes the artifact (traversal, absolute
