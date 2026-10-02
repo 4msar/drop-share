@@ -92,7 +92,7 @@ export async function fetchArtifactListing(
 
     if (response.status === 404) {
         throw new ArtifactNotFoundError(
-            "This artifact doesn't exist, or was deleted.",
+            "This artifact or page doesn't exist, was deleted, or is private.",
         );
     }
 

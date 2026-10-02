@@ -254,6 +254,25 @@ page. The owner's own viewer, on `/a/<ulid>/?token=…`, derives the share
 token and loads raw files through `/s/` too, since a raw file request can't
 carry the owner token.
 
+Without a valid token, *mutations* on a private artifact (PATCH, DELETE,
+rename, upload into it) also answer exactly what a missing artifact would —
+the same `404` and body, after the same input validation — never a `403` or
+`409` that would confirm it exists.
+
+Uploads silently skip hidden (dot-prefixed) paths in every mode — `.DS_Store`,
+`.git/…`, `__MACOSX/._*` in a ZIP, and above all a planted `.artifact.json`,
+which would otherwise replace the artifact's lock and visibility. They could
+never be listed or served anyway; an upload made only of them is a `400`.
+Metadata updates are written with an R2 `etagMatches` condition, so two
+concurrent PATCHes can't silently undo each other (the loser gets `409`).
+
+**Share links are a password oracle.** A share token is
+`SHA-1(SHA-1("<id>:<password>"))` and the id is in the link, so anyone holding
+a share link can try passwords offline at hash speed. A strong password
+keeps the owner token out of reach; a weak one doesn't. (A server-secret
+HMAC or a stored random share token would close this, at the cost of the
+client/CLI no longer being able to derive the link themselves.)
+
 Share tokens are deterministic: the same lock token always gives the same
 share link, so making an artifact public and then private again revives old
 links, and there's no way to rotate one without a new lock (which isn't

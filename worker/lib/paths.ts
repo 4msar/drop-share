@@ -40,7 +40,13 @@ export function hasHiddenSegment(path: string): boolean {
   return path.split("/").some((segment) => segment.startsWith("."));
 }
 
-/** Builds the R2 object key for a file within an artifact, validating both parts. */
+/**
+ * Builds the R2 object key for a file within an artifact, validating both
+ * parts. Hidden (dot-prefixed) paths are refused too: they could never be
+ * listed or served anyway, and one of them is the reserved `.artifact.json`
+ * marker - writing that through an upload would replace the artifact's lock
+ * and visibility.
+ */
 export function buildObjectKey(artifactId: string, rawPath: string): string {
   if (!isValidArtifactId(artifactId)) {
     throw new Error(`Invalid artifact id: ${artifactId}`);
@@ -48,6 +54,9 @@ export function buildObjectKey(artifactId: string, rawPath: string): string {
   const normalized = normalizeRelativePath(rawPath);
   if (normalized === null) {
     throw new Error(`Unsafe relative path: ${rawPath}`);
+  }
+  if (hasHiddenSegment(normalized)) {
+    throw new Error(`Hidden path can't be stored: ${rawPath}`);
   }
   return `${artifactId}/${normalized}`;
 }

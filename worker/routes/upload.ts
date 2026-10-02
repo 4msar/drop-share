@@ -8,7 +8,11 @@ import {
 import { getContentType } from "../lib/contentType.js";
 import { jsonError, jsonOk } from "../lib/http.js";
 import { generateArtifactId, isValidArtifactId } from "../lib/ids.js";
-import { buildObjectKey, normalizeRelativePath } from "../lib/paths.js";
+import {
+    buildObjectKey,
+    hasHiddenSegment,
+    normalizeRelativePath,
+} from "../lib/paths.js";
 import { listAllArtifactKeys } from "../lib/r2.js";
 import {
     PayloadTooLargeError,
@@ -64,11 +68,19 @@ function parseUploadMode(value: FormDataEntryValue | null): UploadMode | null {
     return null;
 }
 
+interface ExistingTarget {
+    id: string;
+    /** Private and not readable with the supplied token. Treated exactly
+     * like a missing artifact (same 404, at the same point) so an upload
+     * can't be used to probe whether a private artifact exists. */
+    hidden: boolean;
+}
+
 async function authorizeExistingArtifact(
     request: Request,
     env: Env,
     rawId: FormDataEntryValue | null,
-): Promise<string | undefined> {
+): Promise<ExistingTarget | undefined> {
     if (typeof rawId !== "string" || rawId.length === 0) {
         return undefined;
     }
@@ -79,11 +91,12 @@ async function authorizeExistingArtifact(
 
     const token = request.headers.get("X-Artifact-Token");
     const auth = await loadArtifactAuth(env.ARTIFACTS_BUCKET, rawId, token);
+    if (!auth.auth.readable) return { id: rawId, hidden: true };
     if (!auth.auth.canModify) {
         throw new ForbiddenArtifactError("Forbidden");
     }
 
-    return rawId;
+    return { id: rawId, hidden: false };
 }
 
 function extractUploadFiles(form: FormData): File[] {
@@ -124,9 +137,9 @@ export async function handleUpload(
         );
     }
 
-    let existingId: string | undefined;
+    let existing: ExistingTarget | undefined;
     try {
-        existingId = await authorizeExistingArtifact(
+        existing = await authorizeExistingArtifact(
             request,
             env,
             form.get("id"),
@@ -147,7 +160,7 @@ export async function handleUpload(
     }
 
     try {
-        const result = await uploadByMode(mode, parts, limits, env, existingId);
+        const result = await uploadByMode(mode, parts, limits, env, existing);
         return jsonOk(result);
     } catch (error) {
         if (error instanceof ArtifactNotFoundError)
@@ -194,22 +207,33 @@ async function loadExistingArtifact(
     return { totalSize, fileCount };
 }
 
+/** `loadExistingArtifact`, except a hidden (private) target reads as missing. */
+async function loadVisibleArtifact(
+    bucket: R2Bucket,
+    target: ExistingTarget,
+    artifactId: string,
+    excludePaths: Set<string>,
+): Promise<{ totalSize: number; fileCount: number } | null> {
+    if (target.hidden) return null;
+    return loadExistingArtifact(bucket, artifactId, excludePaths);
+}
+
 async function uploadByMode(
     mode: UploadMode,
     parts: File[],
     limits: Limits,
     env: Env,
-    existingId: string | undefined,
+    existing: ExistingTarget | undefined,
 ): Promise<{ id: string; url: string }> {
     switch (mode) {
         case "file":
-            return uploadSingleFile(env, parts, limits, false, existingId);
+            return uploadSingleFile(env, parts, limits, false, existing);
         case "zip":
-            return uploadSingleFile(env, parts, limits, true, existingId);
+            return uploadSingleFile(env, parts, limits, true, existing);
         case "directory":
-            return uploadDirectory(env, parts, limits, existingId);
+            return uploadDirectory(env, parts, limits, existing);
         case "zip-extract":
-            return uploadZipExtract(env, parts, limits, existingId);
+            return uploadZipExtract(env, parts, limits, existing);
     }
 }
 
@@ -229,6 +253,11 @@ function planFilesForDirectoryUpload(
                 `Unsafe or invalid path: ${file.name}`,
             );
         }
+        // Dot-files (`.DS_Store`, `.git/...`, and the reserved
+        // `.artifact.json`) are skipped rather than rejected, so a folder
+        // that happens to contain them still uploads - they could never be
+        // listed or served anyway.
+        if (hasHiddenSegment(relativePath)) continue;
         if (seenPaths.has(relativePath)) {
             throw new UploadValidationError(
                 `Duplicate path in upload: ${relativePath}`,
@@ -239,6 +268,11 @@ function planFilesForDirectoryUpload(
         planned.push({ path: relativePath, file });
     }
 
+    if (planned.length === 0) {
+        throw new UploadValidationError(
+            "Nothing to upload: hidden (dot-prefixed) files are ignored",
+        );
+    }
     return planned;
 }
 
@@ -247,8 +281,9 @@ async function uploadSingleFile(
     parts: File[],
     limits: Limits,
     isZip: boolean,
-    existingId: string | undefined,
+    target: ExistingTarget | undefined,
 ): Promise<{ id: string; url: string }> {
+    const existingId = target?.id;
     if (parts.length !== 1) {
         throw new UploadValidationError(
             `Expected exactly one file for this upload mode, received ${parts.length}`,
@@ -264,13 +299,19 @@ async function uploadSingleFile(
             `Unsafe or invalid filename: ${file.name}`,
         );
     }
+    if (hasHiddenSegment(relativePath)) {
+        throw new UploadValidationError(
+            `Hidden (dot-prefixed) files can't be uploaded: ${file.name}`,
+        );
+    }
 
     const id = existingId ?? generateArtifactId();
     let metadataBody: string | null = null;
 
     if (existingId) {
-        const existing = await loadExistingArtifact(
+        const existing = await loadVisibleArtifact(
             env.ARTIFACTS_BUCKET,
+            target!,
             existingId,
             new Set([relativePath]),
         );
@@ -334,8 +375,9 @@ async function uploadDirectory(
     env: Env,
     parts: File[],
     limits: Limits,
-    existingId: string | undefined,
+    target: ExistingTarget | undefined,
 ): Promise<{ id: string; url: string }> {
+    const existingId = target?.id;
     if (parts.length > limits.maxArtifactFileCount) {
         throw new UploadValidationError(
             `Upload contains ${parts.length} files, exceeding the ${limits.maxArtifactFileCount} file limit`,
@@ -349,8 +391,9 @@ async function uploadDirectory(
     let metadataBody: string | null = null;
 
     if (existingId) {
-        const existing = await loadExistingArtifact(
+        const existing = await loadVisibleArtifact(
             env.ARTIFACTS_BUCKET,
+            target!,
             existingId,
             new Set(planned.map(({ path }) => path)),
         );
@@ -403,8 +446,9 @@ async function uploadZipExtract(
     env: Env,
     parts: File[],
     limits: Limits,
-    existingId: string | undefined,
+    target: ExistingTarget | undefined,
 ): Promise<{ id: string; url: string }> {
+    const existingId = target?.id;
     if (parts.length !== 1) {
         throw new UploadValidationError(
             `Expected exactly one ZIP file, received ${parts.length}`,
@@ -415,18 +459,28 @@ async function uploadZipExtract(
     checkFileSize(zipFile.size, limits.maxFileSizeBytes, zipFile.name);
 
     const zipBytes = new Uint8Array(await zipFile.arrayBuffer());
-    const extracted = await extractZipSafely(zipBytes, {
-        maxTotalBytes: limits.maxArtifactSizeBytes,
-        maxEntryCount: limits.maxArtifactFileCount,
-    });
+    // Hidden entries (`__MACOSX/._*`, `.DS_Store`, a planted
+    // `.artifact.json`) are dropped, same as in a directory upload.
+    const extracted = (
+        await extractZipSafely(zipBytes, {
+            maxTotalBytes: limits.maxArtifactSizeBytes,
+            maxEntryCount: limits.maxArtifactFileCount,
+        })
+    ).filter((entry) => !hasHiddenSegment(entry.path));
+    if (extracted.length === 0) {
+        throw new UploadValidationError(
+            "Nothing to upload: the ZIP has no visible files",
+        );
+    }
 
     const id = existingId ?? generateArtifactId();
     let metadataBody: string | null = null;
 
     if (existingId) {
         const extractedPaths = new Set(extracted.map((entry) => entry.path));
-        const existing = await loadExistingArtifact(
+        const existing = await loadVisibleArtifact(
             env.ARTIFACTS_BUCKET,
+            target!,
             existingId,
             extractedPaths,
         );

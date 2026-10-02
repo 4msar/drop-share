@@ -147,18 +147,20 @@ describe("the share route serves private artifacts read-only", () => {
 
     expect((await get(`/api/artifact/${id}/download?share=${share}`)).status).toBe(200);
 
-    // The share token is not the owner token: every mutation is refused.
-    expect((await patch(id, { label: "hijack" }, share)).status).toBe(403);
-    expect((await patch(id, { visibility: "public" }, share)).status).toBe(403);
+    // The share token is not the owner token: every mutation is refused -
+    // with the same 404 a missing artifact gets.
+    expect((await patch(id, { label: "hijack" }, share)).status).toBe(404);
+    expect((await patch(id, { visibility: "public" }, share)).status).toBe(404);
     const del = await get(`/api/artifact/${id}`, {
       method: "DELETE",
       headers: { "X-Artifact-Token": share },
     });
-    expect(del.status).toBe(403);
+    expect(del.status).toBe(404);
     const up = await exports.default.fetch(
       uploadRequest("directory", [{ name: "x.txt", content: "x" }], { id }, { "X-Artifact-Token": share }),
     );
-    expect(up.status).toBe(403);
+    expect(up.status).toBe(404);
+    expect((await get(`/api/artifact/${id}?token=${OWNER_TOKEN}`)).status).toBe(200);
   });
 
   it("lets the owner token read a private artifact on /a/", async () => {
@@ -243,5 +245,300 @@ describe("malformed metadata fails closed for reads", () => {
     await env.ARTIFACTS_BUCKET.put(`${id}/.artifact.json`, "not json{{{");
     expect((await get(`/a/${id}/site/index.html`)).status).toBe(404);
     expect((await get(`/api/artifact/${id}`)).status).toBe(404);
+  });
+});
+
+const MISSING_ID = "01ARZ3NDEKTSV4RRFFQ69G5FAV";
+
+/** Status, body and every header except Date - what an outsider can observe. */
+async function observable(response: Response) {
+  const headers = [...response.headers].filter(([name]) => name !== "date");
+  return { status: response.status, headers, body: await response.text() };
+}
+
+describe("a private artifact is indistinguishable from a missing one", () => {
+  it.each([
+    ["page", (id: string) => `/a/${id}/`],
+    ["sub-page", (id: string) => `/a/${id}/sub/`],
+    ["raw file", (id: string) => `/a/${id}/index.html`],
+    ["folder without slash", (id: string) => `/a/${id}/css`],
+    ["share page, no token", (id: string) => `/s/${id}/`],
+    ["share file, no token", (id: string) => `/s/${id}/index.html`],
+    ["share file, wrong token", (id: string) => `/s/${id}.${"0".repeat(40)}/index.html`],
+    ["listing", (id: string) => `/api/artifact/${id}`],
+    ["listing, wrong share", (id: string) => `/api/artifact/${id}?share=nope`],
+    ["download", (id: string) => `/api/artifact/${id}/download`],
+  ])("%s", async (_, path) => {
+    const id = await upload([
+      { name: "index.html", content: "<h1>x</h1>" },
+      { name: "css/a.css", content: "a{}" },
+    ]);
+    expect((await patch(id, { lock: true, token: OWNER_TOKEN, visibility: "private" })).status).toBe(200);
+
+    const hidden = await observable(await get(path(id), { redirect: "manual" }));
+    const missing = await observable(await get(path(MISSING_ID), { redirect: "manual" }));
+    expect(hidden.status).toBe(404);
+    expect(hidden).toEqual(missing);
+  });
+
+  it("answers HEAD the same way", async () => {
+    const { id, share } = await privateArtifact();
+    expect((await get(`/s/${id}/index.html`, { method: "HEAD" })).status).toBe(404);
+    const ok = await get(`/s/${id}.${share}/site/index.html`, { method: "HEAD" });
+    expect(ok.status).toBe(200);
+    expect(await ok.text()).toBe("");
+  });
+});
+
+describe("share route segment parsing", () => {
+  it.each([
+    ["an empty token after the dot", (id: string) => `/s/${id}./site/index.html`],
+    ["extra dots in the token", (id: string, share: string) => `/s/${id}.${share}.x/site/index.html`],
+    ["an upper-cased token", (id: string, share: string) => `/s/${id}.${share.toUpperCase()}/site/index.html`],
+    ["a truncated token", (id: string, share: string) => `/s/${id}.${share.slice(0, -1)}/site/index.html`],
+    ["a percent-encoded dot", (id: string, share: string) => `/s/${id}%2E${share}/site/index.html`],
+    ["an invalid id", (_: string, share: string) => `/s/not-an-id.${share}/site/index.html`],
+    ["a malformed percent-encoding", (id: string, share: string) => `/s/${id}.${share}/%E0%A4%A`],
+    ["a path traversal", (id: string, share: string) => `/s/${id}.${share}/..%2F..%2F${id}%2Fsite%2Findex.html`],
+    ["the hidden metadata file", (id: string, share: string) => `/s/${id}.${share}/.artifact.json`],
+  ])("404s %s", async (_, path) => {
+    const { id, share } = await privateArtifact();
+    expect((await get(path(id, share))).status).toBe(404);
+  });
+
+  it("serves unicode file names through the share route", async () => {
+    const id = await upload([{ name: "café.txt", content: "crème" }]);
+    await patch(id, { lock: true, token: OWNER_TOKEN, visibility: "private" });
+    const share = await deriveShareToken(OWNER_TOKEN);
+    const response = await get(`/s/${id}.${share}/${encodeURIComponent("café.txt")}`);
+    expect(response.status).toBe(200);
+    expect(await response.text()).toBe("crème");
+  });
+
+  it("serves a legacy artifact with no metadata through /s/", async () => {
+    const id = await upload();
+    await env.ARTIFACTS_BUCKET.delete(`${id}/.artifact.json`);
+    expect((await get(`/s/${id}/site/index.html`)).status).toBe(200);
+  });
+
+  it("keeps the share prefix on a folder redirect for a public artifact", async () => {
+    const id = await upload();
+    const response = await get(`/s/${id}/site`, { redirect: "manual" });
+    expect(response.headers.get("Location")).toBe(`${ORIGIN}/s/${id}/site/`);
+  });
+});
+
+describe("visibility updates: edge cases", () => {
+  it("rejects a null visibility", async () => {
+    const id = await upload();
+    expect((await patch(id, { visibility: null })).status).toBe(400);
+  });
+
+  it("applies nothing when one part of a combined update is refused", async () => {
+    const id = await upload();
+    expect((await patch(id, { label: "renamed", visibility: "private" })).status).toBe(409);
+    const listing = (await (await get(`/api/artifact/${id}`)).json()) as { label: string };
+    expect(listing.label).not.toBe("renamed");
+  });
+
+  it("refuses lock + private on an artifact that is already locked", async () => {
+    const { id } = await privateArtifact();
+    // Without the owner token it can't even be seen (404); with it, re-locking 409s.
+    expect((await patch(id, { lock: true, token: "other-token", visibility: "private" })).status).toBe(404);
+    expect(
+      (await patch(id, { lock: true, token: "other-token", visibility: "private" }, OWNER_TOKEN)).status,
+    ).toBe(409);
+    // The original owner token still works - nothing was replaced.
+    expect((await patch(id, { visibility: "public" }, OWNER_TOKEN)).status).toBe(200);
+  });
+
+  it("lets anyone set an unlocked artifact public (a no-op)", async () => {
+    const id = await upload();
+    expect((await patch(id, { visibility: "public" })).body.visibility).toBe("public");
+  });
+
+  it("404s a visibility change for an artifact that doesn't exist", async () => {
+    expect((await patch(MISSING_ID, { visibility: "public" })).status).toBe(404);
+  });
+
+  it("keeps label and lock across a visibility round-trip", async () => {
+    const { id } = await privateArtifact();
+    await patch(id, { label: "Kept" }, OWNER_TOKEN);
+    await patch(id, { visibility: "public" }, OWNER_TOKEN);
+    const listing = (await (await get(`/api/artifact/${id}?token=${OWNER_TOKEN}`)).json()) as {
+      label: string;
+      locked: boolean;
+      canModify: boolean;
+    };
+    expect(listing).toMatchObject({ label: "Kept", locked: true, canModify: true });
+  });
+
+  it("lets the owner rename and delete files in a private artifact", async () => {
+    const { id } = await privateArtifact();
+    const rename = await get(`/api/artifact/${id}/file`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", "X-Artifact-Token": OWNER_TOKEN },
+      body: JSON.stringify({ path: "site/notes.md", newName: "readme.md" }),
+    });
+    expect(rename.status).toBe(200);
+    const del = await get(`/api/artifact/${id}?path=site/readme.md`, {
+      method: "DELETE",
+      headers: { "X-Artifact-Token": OWNER_TOKEN },
+    });
+    expect(del.status).toBe(200);
+  });
+});
+
+describe("document-navigation 404s", () => {
+  it("still answers 404 (falling back to JSON when no client assets are built)", async () => {
+    const { id } = await privateArtifact();
+    const response = await get(`/a/${id}/`, { headers: { "Sec-Fetch-Dest": "document" } });
+    expect(response.status).toBe(404);
+  });
+});
+
+describe("mutations on a private artifact are indistinguishable from a missing one", () => {
+  async function upPrivate() {
+    const id = await upload([{ name: "a.txt", content: "a" }]);
+    await patch(id, { lock: true, token: OWNER_TOKEN, visibility: "private" });
+    return id;
+  }
+
+  const json = (body: unknown) => ({
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+
+  it.each([
+    ["PATCH label", (id: string) => get(`/api/artifact/${id}`, json({ label: "x" }))],
+    ["PATCH private", (id: string) => get(`/api/artifact/${id}`, json({ visibility: "private" }))],
+    ["PATCH lock", (id: string) => get(`/api/artifact/${id}`, json({ lock: true, token: "t" }))],
+    ["DELETE artifact", (id: string) => get(`/api/artifact/${id}`, { method: "DELETE" })],
+    ["DELETE file", (id: string) => get(`/api/artifact/${id}?path=a.txt`, { method: "DELETE" })],
+    ["rename file", (id: string) => get(`/api/artifact/${id}/file`, json({ path: "a.txt", newName: "b.txt" }))],
+    ["no-op rename", (id: string) => get(`/api/artifact/${id}/file`, json({ path: "a.txt", newName: "a.txt" }))],
+    ["rename, bad input", (id: string) => get(`/api/artifact/${id}/file`, json({ path: "a.txt" }))],
+    ["upload into", (id: string) =>
+      exports.default.fetch(uploadRequest("directory", [{ name: "x.txt", content: "x" }], { id }))],
+    ["upload into, oversized count", (id: string) =>
+      exports.default.fetch(uploadRequest("file", [{ name: "x.txt", content: "x" }, { name: "y.txt", content: "y" }], { id }))],
+  ])("%s", async (_, send) => {
+    const id = await upPrivate();
+    // Error messages may echo the caller's own id back - not a leak.
+    const hidden = await observable(await send(id));
+    const missing = await observable(await send(MISSING_ID));
+    hidden.body = hidden.body.replaceAll(id, "<id>");
+    missing.body = missing.body.replaceAll(MISSING_ID, "<id>");
+    expect(hidden).toEqual(missing);
+    expect(hidden.status).not.toBe(200);
+    // And nothing changed.
+    expect((await get(`/api/artifact/${id}?token=${OWNER_TOKEN}`)).status).toBe(200);
+  });
+});
+
+describe("uploads can never write the hidden metadata marker", () => {
+  const forged = JSON.stringify({ label: "x", createdAt: "x", visibility: "public" });
+
+  it("skips .artifact.json in a directory upload into a private artifact", async () => {
+    const { id } = await privateArtifact();
+    const response = await exports.default.fetch(
+      uploadRequest(
+        "directory",
+        [{ name: ".artifact.json", content: forged }, { name: "ok.txt", content: "ok" }],
+        { id },
+        { "X-Artifact-Token": OWNER_TOKEN },
+      ),
+    );
+    expect(response.status).toBe(200);
+    // Still private and still locked.
+    expect((await get(`/a/${id}/ok.txt`)).status).toBe(404);
+    expect((await get(`/a/${id}/ok.txt?token=${OWNER_TOKEN}`)).status).toBe(200);
+    expect((await patch(id, { label: "y" })).status).toBe(404);
+  });
+
+  it("skips nested and other dot-files, keeping visible ones", async () => {
+    const id = await upload([
+      { name: "site/.git/config", content: "x" },
+      { name: "site/.DS_Store", content: "x" },
+      { name: "site/page.html", content: "x" },
+    ]);
+    const listing = (await (await get(`/api/artifact/${id}?path=site/`)).json()) as {
+      files: { name: string }[];
+      directories: string[];
+    };
+    expect(listing.files.map((f) => f.name)).toEqual(["page.html"]);
+    expect(listing.directories).toEqual([]);
+    expect(await env.ARTIFACTS_BUCKET.head(`${id}/site/.DS_Store`)).toBeNull();
+  });
+
+  it("rejects a directory upload made only of dot-files", async () => {
+    const response = await exports.default.fetch(
+      uploadRequest("directory", [{ name: ".artifact.json", content: forged }]),
+    );
+    expect(response.status).toBe(400);
+  });
+
+  it("rejects a single-file upload of a dot-file", async () => {
+    const id = await upload([{ name: "a.txt", content: "a" }]);
+    const response = await exports.default.fetch(
+      uploadRequest("file", [{ name: ".artifact.json", content: forged }], { id }),
+    );
+    expect(response.status).toBe(400);
+  });
+});
+
+describe("metadata parsing fails closed", () => {
+  it("treats an explicit null visibility as malformed (unreadable)", async () => {
+    const id = await upload();
+    await env.ARTIFACTS_BUCKET.put(
+      `${id}/.artifact.json`,
+      JSON.stringify({ label: "x", createdAt: "x", token: "t", visibility: null }),
+    );
+    expect((await get(`/a/${id}/site/index.html`)).status).toBe(404);
+  });
+});
+
+describe("conditional responses on the share route", () => {
+  it("keeps the private cache policy on a 304", async () => {
+    const { id, share } = await privateArtifact();
+    const first = await get(`/s/${id}.${share}/site/index.html`);
+    const etag = first.headers.get("ETag")!;
+    const second = await get(`/s/${id}.${share}/site/index.html`, { headers: { "If-None-Match": etag } });
+    expect(second.status).toBe(304);
+    expect(second.headers.get("Cache-Control")).toBe("private, max-age=0, must-revalidate");
+  });
+});
+
+describe("redirects and segment decoding", () => {
+  it("keeps the owner's ?token= across a folder redirect on /a/", async () => {
+    const { id } = await privateArtifact();
+    const response = await get(`/a/${id}/site?token=${OWNER_TOKEN}`, { redirect: "manual" });
+    expect(response.status).toBe(301);
+    expect(response.headers.get("Location")).toBe(`${ORIGIN}/a/${id}/site/?token=${OWNER_TOKEN}`);
+  });
+
+  it("encodes special characters in a redirected folder name", async () => {
+    const id = await upload([{ name: "a#b?c/x.txt", content: "x" }]);
+    const response = await get(`/a/${id}/${encodeURIComponent("a#b?c")}`, { redirect: "manual" });
+    expect(response.headers.get("Location")).toBe(`${ORIGIN}/a/${id}/a%23b%3Fc/`);
+  });
+
+  it("decodes a percent-encoded share token the same way the client does", async () => {
+    const { id, share } = await privateArtifact();
+    const encoded = `%${share.charCodeAt(0).toString(16)}${share.slice(1)}`;
+    expect((await get(`/s/${id}.${encoded}/site/index.html`)).status).toBe(200);
+  });
+
+  it("404s a malformed percent-encoding in the token", async () => {
+    const { id } = await privateArtifact();
+    expect((await get(`/s/${id}.%E0%A4%A/site/index.html`)).status).toBe(404);
+  });
+
+  it("treats an empty token after the dot as no token", async () => {
+    const id = await upload();
+    expect((await get(`/s/${id}./site/index.html`)).status).toBe(200);
+    const { id: privateId } = await privateArtifact();
+    expect((await get(`/s/${privateId}./site/index.html`)).status).toBe(404);
   });
 });

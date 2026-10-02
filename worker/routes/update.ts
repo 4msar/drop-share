@@ -78,10 +78,23 @@ export async function handleArtifactUpdate(
 
     const auth = await loadArtifactAuth(env.ARTIFACTS_BUCKET, id, token);
 
+    // A private artifact the caller can't read (or malformed metadata, which
+    // fails closed) answers exactly like a missing one - never 403/409, which
+    // would confirm it exists.
+    if (!auth.auth.readable) return jsonError(404, "Artifact not found");
+
+    if (auth.metadata === null) {
+        // No metadata object at all - could be a legacy artifact (real files,
+        // never given one) or an id that was never uploaded to. Only the
+        // former can be updated. Checked before the 409s below so a missing
+        // id is always a 404.
+        const probe = await env.ARTIFACTS_BUCKET.list({ prefix: `${id}/`, limit: 1 });
+        if (probe.objects.length === 0) return jsonError(404, "Artifact not found");
+    }
+
     // Re-locking an already-protected artifact is not a supported operation
     // (there's no token rotation feature) - this mirrors the original lock
-    // endpoint's behavior exactly, including for malformed metadata, which
-    // fails closed as "locked".
+    // endpoint's behavior exactly.
     if (wantsLock && auth.auth.locked) return jsonError(409, "Artifact is already protected");
     // Any other mutation on a protected artifact requires proving ownership.
     if (!wantsLock && auth.auth.locked && !auth.auth.canModify) return jsonError(403, "Forbidden");
@@ -91,22 +104,27 @@ export async function handleArtifactUpdate(
         return jsonError(409, "Lock the artifact before making it private");
     }
 
-    if (auth.metadata === null) {
-        // No metadata object at all - could be a legacy artifact (real files,
-        // never given one) or an id that was never uploaded to. Only the
-        // former can be updated.
-        const probe = await env.ARTIFACTS_BUCKET.list({ prefix: `${id}/`, limit: 1 });
-        if (probe.objects.length === 0) return jsonError(404, "Artifact not found");
-    }
-
     const next: ArtifactMetadata = { ...(auth.metadata ?? createArtifactMetadata("")) };
     if (wantsLabel) next.label = normalizedLabel!;
     if (wantsLock) next.token = lockToken;
     if (visibility !== undefined) next.visibility = visibility;
 
-    await env.ARTIFACTS_BUCKET.put(metadataObjectKey(id), serializeArtifactMetadata(next), {
-        httpMetadata: { contentType: METADATA_CONTENT_TYPE },
-    });
+    // Conditional on the metadata being unchanged since it was read, so two
+    // concurrent updates can't silently undo each other (e.g. a label edit
+    // reverting a just-applied "private"). R2 returns null when it fails.
+    const written = await env.ARTIFACTS_BUCKET.put(
+        metadataObjectKey(id),
+        serializeArtifactMetadata(next),
+        {
+            httpMetadata: { contentType: METADATA_CONTENT_TYPE },
+            ...(auth.metadataObject
+                ? { onlyIf: { etagMatches: auth.metadataObject.etag } }
+                : {}),
+        },
+    );
+    if (written === null) {
+        return jsonError(409, "The artifact was changed at the same time - please retry");
+    }
 
     const response = jsonOk({
         id,

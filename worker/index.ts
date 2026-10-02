@@ -87,7 +87,8 @@ const ARTIFACT_BROWSE_PATTERN = /^\/a\/([^/]+)(\/.*)?$/;
 
 // `/s/<id>[.<shareToken>]/...` - the read-only share route. A ULID never
 // contains `.`, so splitting the first segment on it is unambiguous.
-const SHARE_BROWSE_PATTERN = /^\/s\/([^/.]+)(?:\.([^/]+))?(\/.*)?$/;
+// An empty token (`/s/<id>./`) means no token, matching the client router.
+const SHARE_BROWSE_PATTERN = /^\/s\/([^/.]+)(?:\.([^/]*))?(\/.*)?$/;
 
 /** Decodes a browse sub-path once, or null for malformed percent-encoding. */
 function decodeSubPath(rawSubPath: string | undefined): string | null {
@@ -117,14 +118,19 @@ function shareBrowse(request: Request, env: Env): Promise<Response> | Response {
     const match = new URL(request.url).pathname.match(SHARE_BROWSE_PATTERN);
     if (!match) return jsonError(404, "Artifact not found");
 
-    const [, id, shareToken, rawSubPath] = match;
+    const [, id, rawShareToken, rawSubPath] = match;
     const subPath = decodeSubPath(rawSubPath);
-    if (subPath === null) return jsonError(404, "Artifact not found");
+    // Decoded the same way the client router decodes its `:seg` param, so
+    // both sides always agree on what the token is.
+    const shareToken = decodeSubPath(rawShareToken);
+    if (subPath === null || shareToken === null) {
+        return jsonError(404, "Artifact not found");
+    }
 
-    const segment = shareToken ? `${id}.${shareToken}` : id;
+    const segment = shareToken ? `${id}.${rawShareToken}` : id;
     return handleArtifactBrowse(id, subPath, env, request, {
         basePath: `/s/${segment}/`,
-        shareToken: shareToken ?? null,
+        shareToken: shareToken || null,
         shared: true,
     });
 }

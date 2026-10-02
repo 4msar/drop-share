@@ -11,7 +11,9 @@ import {
     sortFiles,
 } from "../lib/artifact";
 import { CheckIcon } from "../components/Icons";
+import { Button } from "../components/Button";
 import { UnavailableScreen } from "../components/UnavailableScreen";
+import { UnlockDialog } from "../components/UnlockDialog";
 import {
     defaultSidebarOpen,
     getSavedSidebarOpen,
@@ -57,6 +59,10 @@ export default function ViewerPage({ shared = false }: ViewerPageProps) {
 
     return (
         <ArtifactProvider
+            // A fresh provider per artifact, so nothing derived from the
+            // previous one (listing, owner share token) leaks into the next
+            // artifact's links while it loads.
+            key={id}
             id={id}
             routePath={routePath}
             token={token}
@@ -71,7 +77,9 @@ export default function ViewerPage({ shared = false }: ViewerPageProps) {
 
 function ViewerPageContent() {
     const [searchParams, setSearchParams] = useSearchParams();
-    const { id, listing, loadError, actionError, deleted } = useArtifactState();
+    const { id, listing, loadError, actionError, deleted, readOnly } =
+        useArtifactState();
+    const [unlockOpen, setUnlockOpen] = useState(false);
     const { reportError } = useArtifactActions();
     // An explicit toggle is remembered across visits; until there is one,
     // the default follows the layout (open beside the preview, closed when
@@ -154,10 +162,30 @@ function ViewerPageContent() {
 
     if (loadError !== null) {
         return (
-            <UnavailableScreen
-                title="Artifact unavailable"
-                message={loadError}
-            />
+            <>
+                <UnavailableScreen
+                    title="Artifact unavailable"
+                    message={loadError}
+                >
+                    {/* A private artifact 404s exactly like a missing one,
+                        so its owner (e.g. on a new device) gets a way in
+                        from here. A share link is view-only: no unlock. */}
+                    {!readOnly && (
+                        <Button size="sm" onClick={() => setUnlockOpen(true)}>
+                            I own this — unlock with password
+                        </Button>
+                    )}
+                </UnavailableScreen>
+                {unlockOpen && (
+                    <UnlockDialog onClose={() => setUnlockOpen(false)} />
+                )}
+                {actionError !== null && (
+                    <ErrorToast
+                        message={actionError}
+                        onClose={() => reportError(null)}
+                    />
+                )}
+            </>
         );
     }
 

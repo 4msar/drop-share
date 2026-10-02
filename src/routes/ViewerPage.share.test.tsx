@@ -1,8 +1,9 @@
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AppProviders } from "../contexts/AppProviders";
-import { deriveShareToken } from "../lib/hash";
+import { deriveShareToken, hashPassword } from "../lib/hash";
+import { getStoredToken, saveToken } from "../lib/tokens";
 import { getRecentItems } from "../lib/recent";
 import { getSavedSidebarOpen } from "../lib/sidebar";
 import ViewerPage from "./ViewerPage";
@@ -23,6 +24,16 @@ function stubApi({ visibility = "public", locked = true, ownerToken = OWNER_TOKE
     const url = new URL(String(input), "http://localhost");
     if (init?.method === "PATCH") {
       return Response.json({ success: true, id: ID, visibility: "public", locked: true });
+    }
+    const suppliedToken = url.searchParams.get("token");
+    const suppliedShare = url.searchParams.get("share");
+    const canRead =
+      visibility === "public" ||
+      suppliedToken === ownerToken ||
+      suppliedShare === SHARE ||
+      suppliedShare === (await deriveShareToken(ownerToken));
+    if (!canRead) {
+      return Response.json({ success: false, error: "Artifact not found" }, { status: 404 });
     }
     return Response.json({
       success: true,
@@ -56,6 +67,20 @@ async function renderAt(entry: string) {
   );
   await waitFor(() => expect(screen.queryByText("Loading…")).toBeNull());
   await screen.findByTitle("File preview");
+}
+
+async function renderUnavailable(entry: string) {
+  render(
+    <AppProviders>
+      <MemoryRouter initialEntries={[entry]}>
+        <Routes>
+          <Route path="/a/:id/*" element={<ViewerPage />} />
+          <Route path="/s/:seg/*" element={<ViewerPage shared />} />
+        </Routes>
+      </MemoryRouter>
+    </AppProviders>,
+  );
+  await screen.findByRole("heading", { name: "Artifact unavailable" });
 }
 
 async function openMenu() {
@@ -195,5 +220,106 @@ describe("file list toggle", () => {
 
     window.dispatchEvent(new Event("resize"));
     expect(screen.getByRole("button", { name: "Open file list" })).toBeTruthy();
+  });
+});
+
+describe("owner corner cases on a private artifact", () => {
+  it("downloads the ZIP through the share token (a link can't send the owner header)", async () => {
+    stubApi({ visibility: "private" });
+    await renderAt(`/a/${ID}/?token=${OWNER_TOKEN}`);
+    await openMenu();
+    const share = await deriveShareToken(OWNER_TOKEN);
+    expect(screen.getByRole("link", { name: /download as zip/i }).getAttribute("href")).toBe(
+      `/api/artifact/${ID}/download?share=${share}`,
+    );
+  });
+
+  it("opens a folder in a new tab through the read-only share link", async () => {
+    stubApi({ visibility: "private" });
+    await renderAt(`/a/${ID}/?token=${OWNER_TOKEN}`);
+    screen.getByRole("button", { name: "Actions for css/" }).click();
+    const share = await deriveShareToken(OWNER_TOKEN);
+    expect((await screen.findByRole("menuitem", { name: /open in new tab/i })).getAttribute("href")).toBe(
+      `/s/${ID}.${share}/css/`,
+    );
+  });
+
+  it("retries with this browser's saved token when the bare URL 404s", async () => {
+    const fetchMock = stubApi({ visibility: "private" });
+    saveToken(ID, OWNER_TOKEN);
+    await renderAt(`/a/${ID}/`);
+    expect(screen.queryByText("Artifact unavailable")).toBeNull();
+    expect(fetchMock.mock.calls.some((call) => String(call[0]).includes(`token=${OWNER_TOKEN}`))).toBe(true);
+  });
+
+  it("shows the unavailable page, without looping, when the saved token is stale", async () => {
+    const fetchMock = stubApi({ visibility: "private" });
+    saveToken(ID, "stale-token");
+    await renderUnavailable(`/a/${ID}/`);
+    // One bare attempt plus one retry with the saved token - then it stops.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(fetchMock.mock.calls).toHaveLength(2);
+  });
+
+  it("lets the owner unlock from the unavailable page on a new device", async () => {
+    const ownerToken = await hashPassword(ID, "hunter2");
+    stubApi({ visibility: "private", ownerToken });
+    await renderUnavailable(`/a/${ID}/`);
+
+    screen.getByRole("button", { name: /unlock with password/i }).click();
+    fireEvent.change(await screen.findByLabelText("Password"), { target: { value: "hunter2" } });
+    fireEvent.submit(screen.getByLabelText("Password").closest("form")!);
+
+    await screen.findByTitle("File preview");
+    expect(getStoredToken(ID)).toBe(ownerToken);
+  });
+
+  it("reports a wrong password without revealing whether the artifact exists", async () => {
+    stubApi({ visibility: "private", ownerToken: await hashPassword(ID, "hunter2") });
+    await renderUnavailable(`/a/${ID}/`);
+
+    screen.getByRole("button", { name: /unlock with password/i }).click();
+    fireEvent.change(await screen.findByLabelText("Password"), { target: { value: "wrong" } });
+    fireEvent.submit(screen.getByLabelText("Password").closest("form")!);
+
+    expect(await screen.findByText("Incorrect password, or this artifact doesn't exist.")).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Artifact unavailable" })).toBeTruthy();
+  });
+
+  it("offers no unlock on a share link with a bad token", async () => {
+    stubApi({ visibility: "private" });
+    await renderUnavailable(`/s/${ID}.wrong/`);
+    expect(screen.queryByRole("button", { name: /unlock/i })).toBeNull();
+  });
+});
+
+describe("share route corner cases", () => {
+  it("treats an empty token after the dot as no token", async () => {
+    const fetchMock = stubApi({ visibility: "public" });
+    await renderAt(`/s/${ID}./`);
+    expect(String(fetchMock.mock.calls[0][0])).not.toContain("share=");
+    expect(screen.getByTitle("File preview").getAttribute("src")).toBe(`/s/${ID}/index.html`);
+  });
+
+  it("refuses a drag-and-drop upload with a view-only message", async () => {
+    const fetchMock = stubApi({ visibility: "private" });
+    await renderAt(`/s/${ID}.${SHARE}/`);
+    fireEvent.drop(screen.getByRole("navigation", { name: /files in this artifact/i }), {
+      dataTransfer: { items: [{ kind: "file", webkitGetAsEntry: () => null, getAsFile: () => new File(["x"], "x.txt") }] },
+    });
+    expect(await screen.findByText(/view-only link/i)).toBeTruthy();
+    expect(fetchMock.mock.calls.some((call) => String(call[0]) === "/api/upload")).toBe(false);
+  });
+
+  it("keeps folder navigation inside the share route", async () => {
+    stubApi({ visibility: "private" });
+    await renderAt(`/s/${ID}.${SHARE}/css/`);
+    expect(screen.getByRole("link", { name: /parent directory/i }).getAttribute("href")).toBe(`/s/${ID}.${SHARE}/`);
+  });
+
+  it("never stores a share-link visit's token as an owner token", async () => {
+    stubApi({ visibility: "private" });
+    await renderAt(`/s/${ID}.${SHARE}/?token=${OWNER_TOKEN}`);
+    expect(getStoredToken(ID)).toBeNull();
   });
 });

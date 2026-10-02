@@ -6,6 +6,16 @@ import type { RecentItem } from "../lib/recent";
 import { getStoredToken } from "../lib/tokens";
 import { CloseIcon } from "./Icons";
 
+/**
+ * Where a recent item reopens: an owner's saved token wins (full access on
+ * /a/), else the read-only share link it was last opened from, else /a/.
+ */
+function recentItemUrl(item: RecentItem): string {
+    const token = getStoredToken(item.id);
+    if (token) return withToken(`/a/${item.id}/`, token);
+    return item.shareUrl ?? `/a/${item.id}/`;
+}
+
 interface RecentListProps {
     items: RecentItem[];
     currentId?: string;
@@ -52,13 +62,7 @@ export function RecentList({
                             </span>
                         ) : (
                             <Link
-                                to={
-                                    item.shareUrl ??
-                                    withToken(
-                                        `/a/${item.id}/`,
-                                        getStoredToken(item.id),
-                                    )
-                                }
+                                to={recentItemUrl(item)}
                                 onClick={() => onSelect?.(item.id)}
                                 className={cn(
                                     "block rounded-lg transition-all px-3 py-2 text-left no-underline hover:bg-brand-soft",

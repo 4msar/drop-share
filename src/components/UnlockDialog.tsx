@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Button } from "./Button";
 import { Modal } from "./Modal";
-import { fetchArtifactListing } from "../lib/artifact";
+import { ArtifactNotFoundError, fetchArtifactListing } from "../lib/artifact";
 import { hashPassword } from "../lib/hash";
 import { saveToken } from "../lib/tokens";
 import { useArtifactActions, useArtifactState } from "../contexts/useArtifact";
@@ -45,10 +45,14 @@ export function UnlockDialog({ onClose }: UnlockDialogProps) {
             tokenObtained(candidateToken);
             onClose();
         } catch (error) {
+            // A private artifact answers a wrong token with the same 404 as
+            // a missing artifact, so the two can't be told apart here.
             reportError(
-                error instanceof Error
-                    ? error.message
-                    : "Failed to unlock artifact.",
+                error instanceof ArtifactNotFoundError
+                    ? "Incorrect password, or this artifact doesn't exist."
+                    : error instanceof Error
+                      ? error.message
+                      : "Failed to unlock artifact.",
             );
         } finally {
             setUnlocking(false);

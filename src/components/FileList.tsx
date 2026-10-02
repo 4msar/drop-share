@@ -64,8 +64,15 @@ export function FileList({
     onPreview,
     open,
 }: FileListProps) {
-    const { id, subPath, token, canModify, viewerBasePath, fileBasePath } =
-        useArtifactState();
+    const {
+        id,
+        subPath,
+        token,
+        canModify,
+        readOnly,
+        viewerBasePath,
+        fileBasePath,
+    } = useArtifactState();
     const { reload, reportError } = useArtifactActions();
     const parent = parentPath(subPath);
     const [dragActive, setDragActive] = useState(false);
@@ -123,7 +130,11 @@ export function FileList({
         // Check permission before touching the dropped payload - a locked
         // artifact the current session can't modify never gets an upload.
         if (!canModify) {
-            reportError("This artifact is locked — unlock it to add files.");
+            reportError(
+                readOnly
+                    ? "This is a view-only link — files can't be added here."
+                    : "This artifact is locked — unlock it to add files.",
+            );
             return;
         }
 
@@ -215,7 +226,10 @@ export function FileList({
                             {dir}
                         </Link>
                         <FileActionsMenu
-                            href={`${viewerBasePath}${subPath}${dir}`}
+                            // Open/copy-link can't carry the owner token, so
+                            // this uses the raw-file base: the read-only /s/
+                            // link for a private artifact.
+                            href={`${fileBasePath}${subPath}${dir}`}
                             label={dir}
                             canDelete={false}
                         />

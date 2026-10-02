@@ -2,6 +2,7 @@ import {
     useCallback,
     useEffect,
     useMemo,
+    useRef,
     useState,
     type ReactNode,
 } from "react";
@@ -59,6 +60,12 @@ export function ArtifactProvider({
     const [actionError, setActionError] = useState<string | null>(null);
     const [deleted, setDeleted] = useState(false);
     const [reloadToken, setReloadToken] = useState(0);
+    // Read through a ref so the fetch effect doesn't re-run whenever the
+    // parent hands down a new (but equivalent) callback.
+    const onTokenChangeRef = useRef(onTokenChange);
+    useEffect(() => {
+        onTokenChangeRef.current = onTokenChange;
+    });
     // The owner's share token, derived from their (valid) lock token.
     const [ownerShareToken, setOwnerShareToken] = useState<string | null>(
         null,
@@ -103,6 +110,20 @@ export function ArtifactProvider({
             },
             (error: unknown) => {
                 if (cancelled) return;
+                // A private artifact 404s without a token. If this browser
+                // locked/unlocked it before, retry once with the saved token
+                // (put in the URL like any other token) - a second 404 then
+                // has a token and falls through to the error below.
+                const storedToken = getStoredToken(id);
+                if (
+                    error instanceof ArtifactNotFoundError &&
+                    !readOnly &&
+                    !token &&
+                    storedToken
+                ) {
+                    onTokenChangeRef.current(storedToken);
+                    return;
+                }
                 setListing(null);
                 setLoadError(
                     error instanceof ArtifactNotFoundError ||
@@ -116,7 +137,15 @@ export function ArtifactProvider({
         return () => {
             cancelled = true;
         };
-    }, [id, routePath, token, routeShareToken, readOnly, reloadToken, addItem]);
+    }, [
+        id,
+        routePath,
+        token,
+        routeShareToken,
+        readOnly,
+        reloadToken,
+        addItem,
+    ]);
 
     const reload = useCallback(
         () => setReloadToken((count) => count + 1),

@@ -242,9 +242,36 @@ async function setVisibility(
         body = {};
     }
     if (!response.ok || !body.success) {
-        throw new Error(
+        throw new UploadHttpError(
+            response.status,
             body.error ?? `Changing visibility failed (HTTP ${response.status})`,
         );
+    }
+}
+
+/**
+ * Sets visibility on an existing artifact. Making a never-locked artifact
+ * private 409s (it has no token to derive a share token from), so in that
+ * case it's locked with the given token and made private in one request.
+ */
+async function applyVisibility(
+    server: string,
+    id: string,
+    token: string,
+    visibility: Visibility,
+): Promise<void> {
+    try {
+        await setVisibility(server, id, token, visibility);
+    } catch (error) {
+        if (
+            visibility === "private" &&
+            error instanceof UploadHttpError &&
+            error.status === 409
+        ) {
+            await lockArtifact(server, id, token, "private");
+            return;
+        }
+        throw error;
     }
 }
 
@@ -409,14 +436,23 @@ async function main(): Promise<void> {
     }
 
     try {
+        // Going private happens before the new bytes land, so they're never
+        // publicly readable, even briefly (going public order doesn't matter).
+        if (
+            args.visibility === "private" &&
+            plan.action === "update" &&
+            token !== undefined
+        ) {
+            await applyVisibility(args.server, plan.id, token, "private");
+        }
         const result = await performUpload(args, attemptId, token);
         if (plan.action === "create") {
             await finishFreshUpload(statePath, args, result, token);
             return;
         }
         saveResult(statePath, args, result, token);
-        if (args.visibility !== undefined && token !== undefined) {
-            await setVisibility(args.server, result.id, token, args.visibility);
+        if (args.visibility === "public" && token !== undefined) {
+            await applyVisibility(args.server, result.id, token, "public");
         }
         printResult(args.server, result, "Updated artifact:", {
             visibility:
@@ -456,7 +492,15 @@ async function main(): Promise<void> {
     }
 
     // Plain `upload` auto-detected a now-stale artifact - fall back to
-    // publishing a fresh one instead of failing outright.
+    // publishing a fresh one instead of failing outright. A fresh artifact can
+    // only be private if it's locked, i.e. with --password: never silently
+    // publish what was asked to be private.
+    if (args.visibility === "private" && args.password === undefined) {
+        console.error(
+            `The saved artifact no longer exists, and a new one can only be made private with --password. Nothing was uploaded.`,
+        );
+        process.exit(1);
+    }
     const result = await performUpload(args, undefined, args.token);
     await finishFreshUpload(statePath, args, result, args.token);
 }

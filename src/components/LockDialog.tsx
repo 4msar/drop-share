@@ -30,6 +30,10 @@ export function LockDialog({ onClose }: LockDialogProps) {
             reportError("A password is required to lock this artifact.");
             return;
         }
+        if (password.length < 4 || password.length > 50) {
+            reportError("A password must be at 4 - 50 characters long.");
+            return;
+        }
         if (password !== passwordConfirm) {
             reportError("Passwords do not match.");
             return;
@@ -66,8 +70,8 @@ export function LockDialog({ onClose }: LockDialogProps) {
                     Artifact locked
                 </h2>
                 <p className="mb-4 text-xs text-body">
-                    Your password is now required to make further changes.
-                    Keep it safe - it can&apos;t be recovered if forgotten.
+                    Your password is now required to make further changes. Keep
+                    it safe - it can&apos;t be recovered if forgotten.
                     {makePrivate &&
                         " It's also private now: use Share to copy a view-only link."}
                 </p>
@@ -94,8 +98,8 @@ export function LockDialog({ onClose }: LockDialogProps) {
                 Lock this artifact
             </h2>
             <p className="mb-3 text-xs text-body">
-                Choose a password needed to make future changes - it
-                can&apos;t be recovered if lost.
+                Choose a password needed to make future changes - it can&apos;t
+                be recovered if lost.
             </p>
             <label
                 htmlFor="lock-password"
@@ -108,6 +112,7 @@ export function LockDialog({ onClose }: LockDialogProps) {
                 type="password"
                 autoComplete="new-password"
                 placeholder="Enter a password"
+                minLength={4}
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
                 className="mb-3 w-full rounded-md border border-edge bg-surface px-2 py-1.5 text-xs"
@@ -123,6 +128,7 @@ export function LockDialog({ onClose }: LockDialogProps) {
                 type="password"
                 autoComplete="new-password"
                 placeholder="Confirm password"
+                minLength={4}
                 value={passwordConfirm}
                 onChange={(event) => setPasswordConfirm(event.target.value)}
                 className="mb-3 w-full rounded-md border border-edge bg-surface px-2 py-1.5 text-xs"

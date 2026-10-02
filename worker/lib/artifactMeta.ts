@@ -117,7 +117,10 @@ export function parseArtifactMetadata(raw: string): ArtifactMetadata | null {
         return null;
     }
 
-    const visibility = record.visibility ?? "public";
+    // Only a missing field defaults to public - an explicit null (or any
+    // other non-value) is malformed and fails closed.
+    const visibility =
+        record.visibility === undefined ? "public" : record.visibility;
     if (visibility !== "public" && visibility !== "private") return null;
     // A private artifact's share token is derived from its owner token, so
     // private without a token is an inconsistent state - fail closed.

@@ -1217,7 +1217,7 @@ describe("failure states", () => {
       </AppProviders>,
     );
     expect(
-      await screen.findByText(/doesn't exist, or was deleted/i),
+      await screen.findByText(/doesn't exist, was deleted, or is private/i),
     ).toBeTruthy();
   });
 });

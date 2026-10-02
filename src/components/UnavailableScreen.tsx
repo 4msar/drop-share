@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { useNavigate } from "react-router";
 import { Button } from "./Button";
 import { ArchiveIcon } from "./Icons";
@@ -5,10 +6,16 @@ import { ArchiveIcon } from "./Icons";
 interface UnavailableScreenProps {
     title: string;
     message: string;
+    /** Extra actions shown under "Go home". */
+    children?: ReactNode;
 }
 
 /** Full-page "nothing here" state, shared by the viewer's load error and the catch-all route. */
-export function UnavailableScreen({ title, message }: UnavailableScreenProps) {
+export function UnavailableScreen({
+    title,
+    message,
+    children,
+}: UnavailableScreenProps) {
     const navigate = useNavigate();
     return (
         <main className="grid min-h-dvh place-items-center p-6">
@@ -29,6 +36,7 @@ export function UnavailableScreen({ title, message }: UnavailableScreenProps) {
                 >
                     Go home
                 </Button>
+                {children}
             </section>
         </main>
     );

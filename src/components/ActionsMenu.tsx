@@ -144,9 +144,12 @@ export function ActionsMenu({
                             {shareLabel}
                         </button>
                         <a
+                            // A plain download link can't send the owner's
+                            // token header, so a private artifact always
+                            // downloads through its (read-only) share token.
                             href={artifactDownloadUrl(
                                 id,
-                                readOnly && isPrivate ? shareToken : null,
+                                isPrivate ? shareToken : null,
                             )}
                             download
                             onClick={() => scheduleClose()}

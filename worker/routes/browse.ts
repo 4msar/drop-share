@@ -65,15 +65,20 @@ export async function handleArtifactBrowse(
         ownerToken,
         access.shareToken,
     );
-    // Private without a valid token looks exactly like a missing artifact.
-    if (!auth.readable) return jsonError(404, "Artifact not found");
-
     const isDirectoryRequest = rawSubPath === "" || rawSubPath.endsWith("/");
     const relSubPath = rawSubPath.replace(/^\//, "");
 
-    const response = isDirectoryRequest
-        ? await serveViewerShell(id, relSubPath, env, request)
-        : await serveFile(id, relSubPath, env, request, access.basePath);
+    // Private without a valid token must be indistinguishable from a missing
+    // artifact: the same body a missing artifact's page/file request gets,
+    // and (on /s/) the same headers below.
+    const response = !auth.readable
+        ? jsonError(
+              404,
+              isDirectoryRequest ? "Artifact not found" : "File not found",
+          )
+        : isDirectoryRequest
+          ? await serveViewerShell(id, relSubPath, env, request)
+          : await serveFile(id, relSubPath, env, request, access.basePath);
 
     if (!access.shared) return response;
     const shared = new Response(response.body, response);
@@ -81,7 +86,7 @@ export async function handleArtifactBrowse(
     // through the Referer of links/requests made by a shared HTML page.
     shared.headers.set("Referrer-Policy", "no-referrer");
     shared.headers.set("X-Robots-Tag", "noindex");
-    if (metadata?.visibility === "private") {
+    if (auth.readable && metadata?.visibility === "private") {
         shared.headers.set("Cache-Control", PRIVATE_FILE_CACHE_CONTROL);
     }
     return shared;
@@ -108,9 +113,16 @@ export async function withNotFoundPage(
     ) {
         return response;
     }
-    const shell = await env.ASSETS.fetch(
-        new Request(new URL("/", request.url), { method: request.method }),
-    );
+    let shell: Response;
+    try {
+        shell = await env.ASSETS.fetch(
+            new Request(new URL("/", request.url), { method: request.method }),
+        );
+    } catch {
+        // No built client assets (e.g. under test) - the JSON 404 still
+        // answers correctly, just less prettily.
+        return response;
+    }
     if (!shell.ok) return response;
     const headers = new Headers(shell.headers);
     headers.set("Cache-Control", "no-store");
@@ -199,11 +211,23 @@ export async function handleArtifactDelete(
 ): Promise<Response> {
     if (!isValidArtifactId(id)) return jsonError(404, "Artifact not found");
     const auth = await loadArtifactAuth(env.ARTIFACTS_BUCKET, id, token);
+    const singleFile = rawPath !== undefined && rawPath !== null && rawPath !== "";
+    // A private artifact the caller can't read answers exactly what a missing
+    // one would, so a delete can't be used to probe for its existence.
+    if (!auth.auth.readable) {
+        if (singleFile) {
+            const normalized = normalizeRelativePath(rawPath);
+            if (normalized === null || hasHiddenSegment(normalized)) {
+                return jsonError(404, "File not found");
+            }
+        }
+        return jsonError(404, singleFile ? "File not found" : "Artifact not found");
+    }
     if (!auth.auth.canModify) return jsonError(403, "Forbidden");
 
     // A `path` narrows the delete to a single file within the artifact; without
     // one, the whole artifact is removed (the original behaviour).
-    if (rawPath !== undefined && rawPath !== null && rawPath !== "") {
+    if (singleFile) {
         const normalized = normalizeRelativePath(rawPath);
         // The hidden-segment guard keeps the reserved `.artifact.json` marker
         // (and any dot-file) undeletable - it's the same object serving/listing
@@ -238,9 +262,6 @@ export async function handleArtifactRename(
 ): Promise<Response> {
     if (!isValidArtifactId(id)) return jsonError(404, "Artifact not found");
 
-    const auth = await loadArtifactAuth(env.ARTIFACTS_BUCKET, id, token);
-    if (!auth.auth.canModify) return jsonError(403, "Forbidden");
-
     const request = (body && typeof body === "object" ? body : {}) as {
         path?: unknown;
         newName?: unknown;
@@ -267,6 +288,12 @@ export async function handleArtifactRename(
         );
     }
 
+    // Checked after input validation, so a private artifact the caller can't
+    // read gets exactly the answers a missing artifact would.
+    const auth = await loadArtifactAuth(env.ARTIFACTS_BUCKET, id, token);
+    if (!auth.auth.readable) return jsonError(404, "File not found");
+    if (!auth.auth.canModify) return jsonError(403, "Forbidden");
+
     const lastSlash = normalized.lastIndexOf("/");
     const dir = lastSlash === -1 ? "" : normalized.slice(0, lastSlash + 1);
     const newRelativePath = `${dir}${slugName}`;
@@ -274,6 +301,10 @@ export async function handleArtifactRename(
     const oldKey = `${id}/${normalized}`;
     const newKey = `${id}/${newRelativePath}`;
     if (newKey === oldKey) {
+        // A no-op rename still has to name a real file.
+        if ((await env.ARTIFACTS_BUCKET.head(oldKey)) === null) {
+            return jsonError(404, "File not found");
+        }
         return jsonOk({ id, path: normalized, renamedTo: normalized });
     }
 
@@ -426,8 +457,16 @@ async function serveFile(
             limit: 1,
         });
         if (probe.objects.length > 0) {
+            // Each segment re-encoded (a folder named `a#b` or `a?b` must not
+            // turn into a fragment/query), and the query kept so an owner's
+            // `?token=` survives the hop.
+            const url = new URL(request.url);
+            const encodedPath = normalizedPath
+                .split("/")
+                .map(encodeURIComponent)
+                .join("/");
             return Response.redirect(
-                `${new URL(request.url).origin}${basePath}${normalizedPath}/`,
+                `${url.origin}${basePath}${encodedPath}/${url.search}`,
                 301,
             );
         }
