@@ -1,0 +1,75 @@
+# Drop Share
+
+Drop Share is a personal artifact-sharing service built on Cloudflare Workers and R2. Upload a file, ZIP, or folder and receive a public URL for browsing, previewing, downloading, or sharing the artifact.
+
+## Links
+
+- Project: https://github.com/4msar/drop-share
+- Live instance: https://artifacts.msar.dev
+- CLI package: https://www.npmjs.com/package/drop-and-share
+- CLI documentation: https://github.com/4msar/drop-share/tree/main/cli
+
+## Web interface
+
+- `https://artifacts.msar.dev/` is the upload interface.
+- `https://artifacts.msar.dev/a/<id>/` displays an artifact.
+- `https://artifacts.msar.dev/a/<id>/<path>` serves a file as raw bytes.
+- A trailing slash denotes a browsable page; a URL without one denotes a file response.
+
+## Upload modes
+
+- Single file: stored under its original filename.
+- ZIP: stored unchanged by default.
+- Extracted ZIP: extracted server-side into a browsable artifact.
+- Folder or multiple files: stored with their relative paths preserved.
+
+The API accepts multipart uploads at `POST /api/upload` with a `mode` field of `file`, `zip`, `zip-extract`, or `directory`.
+
+## API
+
+- `GET /api/health` checks service health.
+- `GET /api/artifact/<id>` returns an artifact listing.
+- `GET /api/artifact/<id>/download` downloads the complete artifact as a ZIP.
+- `DELETE /api/artifact/<id>` deletes an artifact.
+- `DELETE /api/artifact/<id>?path=<path>` deletes one file.
+- `PATCH /api/artifact/<id>` updates an artifact label or protection settings.
+- `PATCH /api/artifact/<id>/file` renames a file.
+
+## CLI
+
+With Node.js 18 or newer:
+
+Directory:
+```sh
+npx drop-and-share upload ./path 
+```
+
+Files:
+```sh
+npx drop-and-share upload file1.png index.md
+```
+
+Useful commands and options:
+
+- `drop-share upload <path>` uploads a file, ZIP, or folder.
+- `drop-share upload <zip> --extract` extracts a ZIP server-side.
+- `drop-share update <path>` explicitly updates the artifact previously published from that path.
+- `--new` forces a new artifact instead of updating a previous one.
+- `--name <name>` changes the stored name for a single-file upload.
+- `--password <password>` protects a new artifact or unlocks an existing protected artifact.
+- `--token <token>` supplies the derived token for a protected artifact.
+- `--server <url>` selects the server; `ARTIFACT_SERVER` is also supported.
+
+Re-uploading from the same local directory updates its existing artifact. Use `--new` to create a separate artifact.
+
+## Limits and security
+
+- Maximum file size: 10 MB by default.
+- Maximum total artifact size: 10 MB by default.
+- Maximum file count: 2,000 by default.
+- Limits are enforced server-side, including actual decompressed ZIP output.
+- Artifacts are public and unauthenticated by default. Anyone who can reach an unlocked artifact can view, update, or delete it.
+- Optional per-artifact protection can require a token for mutations. The plaintext password is derived in the client and is never sent to the server.
+- Uploaded HTML and SVG are served with a sandboxed Content Security Policy.
+
+For deployment, configuration, the complete security model, and implementation details, see the project README: https://github.com/4msar/drop-share#readme
