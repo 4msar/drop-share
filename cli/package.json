@@ -1,6 +1,6 @@
 {
   "name": "drop-and-share",
-  "version": "0.1.8",
+  "version": "1.0.10",
   "description": "CLI for uploading files, ZIPs, and folders to a drop-share instance",
   "type": "module",
   "bin": {

@@ -1,69 +1,108 @@
 #!/bin/sh
-# Bumps the patch version in package.json (and the lockfile, if the package
-# manager updates it) and stages it, so every commit carries a new version.
+# Bumps the patch version of the root package and sets every package in
+# SYNCED_PACKAGES to that same version, staging each manifest and lockfile,
+# so every commit carries a new version and the packages ship in lockstep.
 # Installed via `core.hooksPath` by the `prepare` script. Skip with --no-verify.
 set -eu
 
-repo_root=$(git rev-parse --show-toplevel)
-cd "$repo_root"
+# Directories (relative to the repo root) whose version mirrors the root's.
+SYNCED_PACKAGES="cli"
+
+die() {
+    echo "pre-commit: $*. Aborting commit." >&2
+    exit 1
+}
+
+require() {
+    command -v "$1" >/dev/null 2>&1 || die "'$1' not found on PATH"
+}
+
+# Sets $pm and $lockfile for the package in directory $1, picking the
+# package manager from that package's own lockfile.
+detect_pm() {
+    if [ -f "$1/yarn.lock" ]; then
+        pm=yarn lockfile="$1/yarn.lock"
+    elif [ -f "$1/package-lock.json" ]; then
+        pm=npm lockfile="$1/package-lock.json"
+    else
+        pm=npm lockfile=
+    fi
+}
+
+read_version() {
+    node -p "require('./$1/package.json').version"
+}
+
+# The manifest/lockfile are staged wholesale, so refuse to silently sweep
+# unrelated unstaged edits in them into this commit.
+require_clean() {
+    for f in "$@"; do
+        git diff --quiet -- "$f" || die "$f has unstaged changes; stage or stash them first"
+    done
+}
+
+# set_version <dir> <patch|x.y.z>: applies the bump with the package's own
+# package manager, which also updates its lockfile. Tags/commits are skipped.
+set_version() {
+    detect_pm "$1"
+    case "$pm" in
+        npm)
+            (cd "$1" && npm version "$2" --no-git-tag-version --allow-same-version >/dev/null)
+            ;;
+        yarn)
+            # Yarn 1 needs explicit flags to skip the tag/commit; Yarn 2+
+            # never tags or commits from `yarn version`.
+            if (cd "$1" && yarn --version) | grep -q '^1\.'; then
+                if [ "$2" = patch ]; then flag=--patch; else flag="--new-version $2"; fi
+                # shellcheck disable=SC2086 # $flag is intentionally split
+                (cd "$1" && yarn version $flag --no-git-tag-version --no-commit-hooks >/dev/null)
+            else
+                (cd "$1" && yarn version "$2" >/dev/null)
+            fi
+            ;;
+    esac
+}
+
+stage_package() {
+    detect_pm "$1"
+    git add "$1/package.json" ${lockfile:+"$lockfile"}
+}
+
+cd "$(git rev-parse --show-toplevel)"
 
 if [ ! -f package.json ]; then
     echo "pre-commit: no package.json at repo root, skipping version bump." >&2
     exit 0
 fi
 
-# Pick the project's own package manager from its lockfile.
-if [ -f yarn.lock ]; then
-    pm=yarn
-    lockfile=yarn.lock
-elif [ -f package-lock.json ]; then
-    pm=npm
-    lockfile=package-lock.json
-else
-    pm=npm
-    lockfile=
-fi
-
-if ! command -v "$pm" >/dev/null 2>&1; then
-    echo "pre-commit: '$pm' not found on PATH, cannot bump version. Aborting commit." >&2
-    exit 1
-fi
-
-# The manifest/lockfile are staged wholesale below, so refuse to silently
-# sweep unrelated unstaged edits in them into this commit.
-for f in package.json $lockfile; do
-    if ! git diff --quiet -- "$f"; then
-        echo "pre-commit: $f has unstaged changes; stage or stash them first. Aborting commit." >&2
-        exit 1
-    fi
+# Resolve the package list and run every precondition check before touching
+# any file, so a failure never leaves a half-applied bump behind.
+packages=.
+for dir in $SYNCED_PACKAGES; do
+    [ -f "$dir/package.json" ] && packages="$packages $dir"
 done
 
-old_version=$(node -p "require('./package.json').version")
+require node
+for dir in $packages; do
+    detect_pm "$dir"
+    require "$pm"
+    require_clean "$dir/package.json" ${lockfile:+"$lockfile"}
+done
 
-case "$pm" in
-    npm)
-        npm version patch --no-git-tag-version >/dev/null
-        ;;
-    yarn)
-        # Yarn 1 needs explicit flags to skip the tag/commit; Yarn 2+ never
-        # tags or commits from `yarn version`.
-        if yarn --version | grep -q '^1\.'; then
-            yarn version --patch --no-git-tag-version --no-commit-hooks >/dev/null
-        else
-            yarn version patch >/dev/null
-        fi
-        ;;
-esac
-
-new_version=$(node -p "require('./package.json').version")
-if [ "$new_version" = "$old_version" ]; then
-    echo "pre-commit: version bump failed (still $old_version). Aborting commit." >&2
-    exit 1
-fi
-
-git add package.json
-if [ -n "$lockfile" ] && [ -f "$lockfile" ]; then
-    git add "$lockfile"
-fi
-
+old_version=$(read_version .)
+set_version . patch
+new_version=$(read_version .)
+[ "$new_version" != "$old_version" ] || die "version bump failed (still $old_version)"
+stage_package .
 echo "pre-commit: version $old_version -> $new_version"
+
+for dir in $packages; do
+    [ "$dir" = . ] && continue
+    dir_old_version=$(read_version "$dir")
+    set_version "$dir" "$new_version"
+    dir_new_version=$(read_version "$dir")
+    [ "$dir_new_version" = "$new_version" ] ||
+        die "$dir version sync failed (is $dir_new_version, want $new_version)"
+    stage_package "$dir"
+    echo "pre-commit: $dir version $dir_old_version -> $dir_new_version"
+done
