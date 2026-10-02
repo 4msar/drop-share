@@ -11,6 +11,7 @@ export interface Args {
     forceNew: boolean;
     id?: string;
     token?: string;
+    password?: string;
 }
 
 function printUsageAndExit(): never {
@@ -23,6 +24,9 @@ function printUsageAndExit(): never {
     console.error("");
     console.error(
         "Passing multiple paths bundles them into a single artifact (each must be a file, not a directory).",
+    );
+    console.error(
+        "--password unlocks a protected artifact with its web-viewer password, or locks a newly created one; --token takes the derived token directly.",
     );
     console.error(
         `Environment: ARTIFACT_SERVER can be set instead of passing --server.`,
@@ -43,6 +47,7 @@ export function parseArgs(argv: string[]): Args {
     let forceNew = false;
     let id: string | undefined;
     let token: string | undefined;
+    let password: string | undefined;
     const targetPaths: string[] = [];
 
     for (let i = 0; i < rest.length; i++) {
@@ -57,8 +62,10 @@ export function parseArgs(argv: string[]): Args {
             forceNew = true;
         } else if (arg === "--id" && command === "update") {
             id = rest[++i];
-        } else if (arg === "--token" || arg === "--password") {
+        } else if (arg === "--token") {
             token = rest[++i];
+        } else if (arg === "--password") {
+            password = rest[++i];
         } else if (arg.startsWith("--")) {
             console.error(`Unknown option: ${arg}`);
             printUsageAndExit();
@@ -68,6 +75,10 @@ export function parseArgs(argv: string[]): Args {
     }
 
     if (targetPaths.length === 0) {
+        printUsageAndExit();
+    }
+    if (token !== undefined && password !== undefined) {
+        console.error("--token and --password can't be used together.");
         printUsageAndExit();
     }
     if (name !== undefined && targetPaths.length > 1) {
@@ -84,5 +95,6 @@ export function parseArgs(argv: string[]): Args {
         forceNew,
         id,
         token,
+        password,
     };
 }

@@ -73,15 +73,42 @@ describe("parseArgs", () => {
         expect(args.extract).toBe(true);
     });
 
-    it("parses --token and --password as the upload token", () => {
-        expect(
-            parseArgs(["upload", "./photo.png", "--token", "saved-token"])
-                .token,
-        ).toBe("saved-token");
-        expect(
-            parseArgs(["upload", "./photo.png", "--password", "saved-password"])
-                .token,
-        ).toBe("saved-password");
+    it("parses --token and --password as separate options", () => {
+        const withToken = parseArgs([
+            "upload",
+            "./photo.png",
+            "--token",
+            "saved-token",
+        ]);
+        expect(withToken.token).toBe("saved-token");
+        expect(withToken.password).toBeUndefined();
+
+        const withPassword = parseArgs([
+            "upload",
+            "./photo.png",
+            "--password",
+            "saved-password",
+        ]);
+        expect(withPassword.password).toBe("saved-password");
+        expect(withPassword.token).toBeUndefined();
+    });
+
+    it("rejects --token and --password together", () => {
+        vi.spyOn(process, "exit").mockImplementation(() => {
+            throw new Error("exit");
+        });
+        vi.spyOn(console, "error").mockImplementation(() => {});
+
+        expect(() =>
+            parseArgs([
+                "upload",
+                "./photo.png",
+                "--token",
+                "t",
+                "--password",
+                "p",
+            ]),
+        ).toThrow("exit");
     });
 
     it("exits with a usage error for an unrecognized command", () => {

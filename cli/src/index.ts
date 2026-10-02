@@ -11,6 +11,7 @@ import {
     removeEntry,
     setEntry,
 } from "./state.js";
+import { derivePasswordToken, resolveToken } from "./token.js";
 
 const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024;
 const MAX_ARTIFACT_SIZE_BYTES = 10 * 1024 * 1024;
@@ -190,6 +191,28 @@ async function uploadDirectory(
     return postUpload(server, form, token);
 }
 
+/** Locks a just-created artifact the same way the web viewer does: `PATCH` with the derived token. */
+async function lockArtifact(
+    server: string,
+    id: string,
+    token: string,
+): Promise<void> {
+    const response = await fetch(`${server}/api/artifact/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ lock: true, token }),
+    });
+    let body: { success?: boolean; locked?: boolean; error?: string };
+    try {
+        body = (await response.json()) as typeof body;
+    } catch {
+        body = {};
+    }
+    if (!response.ok || !body.success || !body.locked) {
+        throw new Error(body.error ?? `Lock failed (HTTP ${response.status})`);
+    }
+}
+
 function printResult(
     server: string,
     result: UploadResult,
@@ -311,16 +334,16 @@ async function main(): Promise<void> {
     const plan = resolvePlan(args, existing);
 
     const attemptId = plan.action === "update" ? plan.id : undefined;
-    const token = args.token ?? existing?.token;
+    const token = resolveToken(args, plan, existing);
 
     try {
         const result = await performUpload(args, attemptId, token);
+        if (plan.action === "create") {
+            await finishFreshUpload(statePath, args, result, token);
+            return;
+        }
         saveResult(statePath, args, result, token);
-        printResult(
-            args.server,
-            result,
-            plan.action === "update" ? "Updated artifact:" : "Artifact:",
-        );
+        printResult(args.server, result, "Updated artifact:");
         return;
     } catch (error) {
         // Re-throw anything that isn't "the artifact this update targeted is
@@ -355,8 +378,43 @@ async function main(): Promise<void> {
     // Plain `upload` auto-detected a now-stale artifact - fall back to
     // publishing a fresh one instead of failing outright.
     const result = await performUpload(args, undefined, args.token);
-    saveResult(statePath, args, result, args.token);
-    printResult(args.server, result, "Artifact:");
+    await finishFreshUpload(statePath, args, result, args.token);
+}
+
+/**
+ * Saves and reports a newly created artifact, locking it first when
+ * `--password` was given. New artifacts are always created unlocked, so the
+ * lock is a separate request made once the id (the password's salt) exists.
+ */
+async function finishFreshUpload(
+    statePath: string,
+    args: Args,
+    result: UploadResult,
+    token: string | undefined,
+): Promise<void> {
+    if (args.password === undefined) {
+        saveResult(statePath, args, result, token);
+        printResult(args.server, result, "Artifact:");
+        return;
+    }
+
+    const lockToken = derivePasswordToken(result.id, args.password);
+    try {
+        await lockArtifact(args.server, result.id, lockToken);
+    } catch (error) {
+        // The upload itself succeeded - remember it so a retry updates this
+        // artifact rather than creating yet another unlocked one.
+        saveResult(statePath, args, result, undefined);
+        printResult(args.server, result, "Artifact (NOT locked):");
+        console.error("");
+        console.error(
+            `Uploaded, but locking failed: ${error instanceof Error ? error.message : String(error)}`,
+        );
+        console.error("Lock it from the web viewer instead.");
+        process.exit(1);
+    }
+    saveResult(statePath, args, result, lockToken);
+    printResult(args.server, result, "Artifact (locked):");
 }
 
 main().catch((error: unknown) => {

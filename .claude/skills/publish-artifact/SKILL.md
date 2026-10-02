@@ -1,63 +1,117 @@
 ---
 name: publish-artifact
 description: Upload a local file, ZIP, or folder to a drop-share server and report back its shareable URL. Re-running it in the same directory updates that artifact instead of creating a new one.
-argument-hint: "[path] [--extract] [--server <url>] [--name <name>] [--new]"
+argument-hint: "[path ...] [--extract] [--server <url>] [--name <name>] [--password <password>] [--token <token>] [--new]"
 disable-model-invocation: true
 allowed-tools: Bash
 ---
 
-Publish a local artifact to drop-share.
+# drop-share
 
-1. If no path was given in the arguments, ask the user which file, ZIP, or
-   folder to publish before running anything.
-2. Otherwise run, using the Bash tool:
+> Publish a local file, ZIP, or folder to a drop-share server and get back a
+> public, shareable URL - no account required. Re-publishing from the same
+> directory updates that artifact in place.
 
-    ```
-    npx --yes drop-and-share upload $ARGUMENTS
-    ```
+## How it works
 
-    (`--yes` skips npx's "ok to install this package?" prompt on a machine
-    that hasn't run it before.)
+1. Pick a file, several files, a `.zip`, or a folder.
+2. The `drop-and-share` CLI uploads it to a drop-share server (Cloudflare
+   Workers + R2).
+3. You get a live artifact URL like `https://<server>/a/<id>/`.
+4. drop-share remembers what each local directory was published as, so the
+   next upload from there updates the same artifact instead of creating a
+   new one.
 
-3. If it succeeds, report back exactly the URL the command printed, as a
-   clickable link. The command prints one of two labels right before the
-   URL:
-    - `Artifact:` — a brand-new artifact was created. Report it as
-      "Published: <url>".
+## For AI agents
 
-- `Updated artifact:` — this directory was published before, so the
-  existing artifact was updated in place (new/changed files added,
-  everything else left alone). Report it as "Updated: <url>".
-  Never invent or guess a URL - only report one that actually appeared in
-  the command's output.
+If no path was given in the arguments, ask the user which file, ZIP, or
+folder to publish before running anything.
 
-4. If it fails, show the user the exact error line from the command's
-   output. Don't retry silently or reinterpret the error.
-5. If the current chat has already an artifact published, keep the id so next time you can use it for update or new upload.
+Otherwise publish with the Bash tool. No install step is needed - `npx`
+handles it; the only prerequisite is Node.js 18+:
 
-Reference notes (don't recite this whole block back to the user unless it's
-directly relevant to what happened):
+```sh
+npx --yes drop-and-share upload $ARGUMENTS
+```
 
-- `drop-and-share` is the published npm package name; the CLI binary it
-  installs is `drop-share`. No install step is needed - `npx` handles it,
-  the only prerequisite is Node.js 18+.
-- drop-share remembers what a local directory was published as (in
-  `~/.drop-share/state.json`), so running `upload` again in that directory
-  updates that same artifact rather than creating a new one. Bundled files
-  use their common parent directory. Pass `--new` to force a brand-new
-  artifact instead. There's also an explicit
-  `npx --yes drop-and-share update <path>` command, which fails clearly
-  (without any network call) if that path was never published before.
-- A `.zip` path uploads unchanged by default; add `--extract` to have the
-  server extract it into a browsable artifact instead.
-- If neither `--server <url>` is passed nor `ARTIFACT_SERVER` is set in the
-  environment, uploads default to the maintainer's own instance
-  (`https://artifacts.msar.dev`). That's fine for quick testing, but worth
-  mentioning to the user if they seem to expect it to go somewhere else -
-  point `--server` at their own drop-share deployment for anything else.
-- Every artifact is capped at 10 MB (per file and in total, including
-  previously-uploaded files when updating); the server enforces this
-  regardless, so a failure here is a real limit, not a bug.
-- There's no authentication: anyone who has an artifact's URL can update or
-  delete it, exactly as they always could delete it. Don't treat a
-  drop-share link as access-controlled.
+(`--yes` skips npx's "ok to install this package?" prompt on a machine that
+hasn't run it before.)
+
+For uploads:
+
+- Pass the final files to share - a build output directory such as `./dist`,
+  a single file, or several files (bundled into one artifact; each must be a
+  file, not a directory).
+- A `.zip` uploads unchanged by default. Add `--extract` to have the server
+  extract it into a browsable artifact.
+- Use `--name <name>` only to rename a single-file upload.
+- To update an existing artifact, just run `upload` again from the same
+  path. Use `npx --yes drop-and-share update <path>` to be explicit - it
+  fails clearly (with no network call) if that path was never published.
+  Use `update <path> --id <id>` to target a specific artifact id.
+- Use `--new` only when the user explicitly wants a separate, brand-new
+  artifact.
+- If the current chat has already published an artifact, keep its id and
+  URL so later requests can update it (`--id <id>`) or deliberately create a
+  new one (`--new`).
+- If an update fails with an auth/forbidden error, the artifact is locked:
+  ask the user for its password and rerun with `--password <password>`.
+  Never guess or invent a password or token.
+- If the user wants a new artifact protected, pass `--password <password>`
+  on the upload; the CLI locks it right after creating it. `--password` and
+  `--token` can't be combined.
+
+After publishing, verify the live URL:
+
+```sh
+curl -sI <url>
+```
+
+If it initially returns 404, wait briefly and retry once before changing
+anything.
+
+Return the result based on the label the command printed right before the
+URL:
+
+- `Artifact:` - a brand-new artifact was created. Report "Published: <url>".
+- `Updated artifact:` - the existing artifact was updated in place (new or
+  changed files added, everything else left alone). Report
+  "Updated: <url>".
+
+Always report the URL exactly as printed, as a clickable link. Never invent
+or guess a URL - only report one that actually appeared in the output.
+
+If the command fails, show the user the exact error line from its output.
+Don't retry silently or reinterpret the error. Size-limit errors are real
+server limits, not bugs.
+
+## Reference notes
+
+Don't recite this block back to the user unless it's directly relevant to
+what happened.
+
+- `drop-and-share` is the npm package; the binary it installs is
+  `drop-share`.
+- Server selection: `--server <url>`, else `ARTIFACT_SERVER`, else the
+  maintainer's own instance `https://artifacts.msar.dev`. That default is
+  for quick testing only - mention it if the user seems to expect the upload
+  to go somewhere else, and suggest `--server` pointing at their own
+  deployment.
+- Limits: 10 MB per file and 10 MB per artifact in total (including files
+  already uploaded when updating). The server enforces this regardless of
+  the CLI.
+- State lives in `~/.drop-share/state.json` (keyed by server + directory;
+  bundled files use their common parent directory). It also stores the
+  derived lock token for protected artifacts.
+- Security: artifacts have no authentication by default - anyone with the
+  URL can view, update, or delete an unlocked artifact. Don't describe a
+  drop-share link as access-controlled unless it was locked.
+- Treat passwords and tokens as sensitive: never echo them back in chat,
+  and never put a `?token=` URL in a link meant for sharing - it grants edit
+  access. The password itself is never sent to the server; only
+  `SHA-1("<id>:<password>")` is.
+
+For details:
+
+- `cli/README.md` in the drop-share repo (https://github.com/4msar/drop-share)
+- https://www.npmjs.com/package/drop-and-share

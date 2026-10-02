@@ -45,8 +45,8 @@ drop-share update <path> [--server <url>] [--extract] [--id <id>] [--token <toke
 | `--name <name>`             | Override the display/stored filename for a single-file upload.                                                                              |
 | `--new` (`upload` only)     | Force publishing a brand-new artifact even if this directory was published before.                                                          |
 | `--id <id>` (`update` only) | Update a specific artifact id directly, instead of looking up the one saved for this path.                                                  |
-| `--token <token>`           | Token for updating a protected artifact. The token is sent in the `X-Artifact-Token` header and saved in `~/.drop-share/state.json`.        |
-| `--password <password>`     | Alias for `--token`.                                                                                                                        |
+| `--token <token>`           | Derived token for updating a protected artifact. Sent as-is in the `X-Artifact-Token` header and saved in `~/.drop-share/state.json`.       |
+| `--password <password>`     | The password set when locking the artifact in the web viewer. For an existing protected artifact, unlocks it; for a newly created artifact, locks it with this password. The CLI derives the token from it (`SHA-1("<id>:<password>")`); the password itself is never sent or saved. Can't be combined with `--token`. |
 
 Passing several paths to `upload` bundles them into a single artifact. Each
 path must be a file, not a directory. Since paths are plain positional
@@ -71,8 +71,16 @@ drop-share upload ./release.zip
 
 Protected artifacts reuse the saved token automatically when uploading again from
 the same directory. Pass `--token` (or `--password`) to provide or replace it
-explicitly. Tokens are stored in `~/.drop-share/state.json`; protect that file and
+explicitly: `--password` takes the password you locked it with in the web viewer
+and is turned into the same token locally. Only the derived token is stored,
+in `~/.drop-share/state.json`; protect that file and
 do not share it.
+
+Passing `--password` when a new artifact is created (a first upload, `--new`, or
+a re-upload whose saved artifact was deleted) locks it with that password right
+after uploading, exactly as the web viewer's **Lock** action would. If locking
+fails, the upload is kept and saved, the command exits non-zero, and you can lock
+it from the web viewer.
 
 > **Note:** if you don't pass `--server` and don't set `ARTIFACT_SERVER`,
 > this CLI uploads to the maintainer's own server
