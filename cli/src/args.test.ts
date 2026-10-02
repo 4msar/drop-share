@@ -131,4 +131,18 @@ describe("parseArgs", () => {
             "exit",
         );
     });
+
+    it("parses --private and --public", () => {
+        expect(parseArgs(["upload", "./a.png", "--private"]).visibility).toBe("private");
+        expect(parseArgs(["update", "./a.png", "--public"]).visibility).toBe("public");
+        expect(parseArgs(["upload", "./a.png"]).visibility).toBeUndefined();
+    });
+
+    it("rejects --private and --public together", () => {
+        vi.spyOn(process, "exit").mockImplementation(() => {
+            throw new Error("exit");
+        });
+        vi.spyOn(console, "error").mockImplementation(() => {});
+        expect(() => parseArgs(["upload", "./a.png", "--private", "--public"])).toThrow("exit");
+    });
 });

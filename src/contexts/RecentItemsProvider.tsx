@@ -22,8 +22,8 @@ export function RecentItemsProvider({ children }: { children: ReactNode }) {
     const [items, setItems] = useState<RecentItem[]>(() => getRecentItems());
 
     const addItem = useCallback(
-        (id: string, visitedAt?: number, label?: string) => {
-            setItems(addRecentItem(id, visitedAt, label));
+        (id: string, visitedAt?: number, label?: string, shareUrl?: string) => {
+            setItems(addRecentItem(id, visitedAt, label, shareUrl));
         },
         [],
     );

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Args } from "./args.js";
-import { derivePasswordToken, resolveToken } from "./token.js";
+import { derivePasswordToken, deriveShareToken, resolveToken, sharePath } from "./token.js";
 
 const ID = "01ARZ3NDEKTSV4RRFFQ69G5FAV";
 // Independently computed: printf '%s' "$ID:secret" | shasum -a 1
@@ -65,5 +65,20 @@ describe("resolveToken", () => {
         expect(
             resolveToken(makeArgs({ password: "secret" }), { action: "create" }, undefined),
         ).toBeUndefined();
+    });
+});
+
+describe("deriveShareToken / sharePath", () => {
+    it("is SHA-1 of the lock token, matching the web viewer and Worker", () => {
+        // SHA-1("abc"), the standard FIPS 180 test vector.
+        expect(deriveShareToken("abc")).toBe("a9993e364706816aba3e25717850c26c9cd0d89d");
+    });
+
+    it("builds a token-carrying path only for private artifacts", () => {
+        expect(sharePath("ID", "private", "abc")).toBe(
+            "/s/ID.a9993e364706816aba3e25717850c26c9cd0d89d/",
+        );
+        expect(sharePath("ID", "public", "abc")).toBe("/s/ID/");
+        expect(sharePath("ID", "private", undefined)).toBe("/s/ID/");
     });
 });

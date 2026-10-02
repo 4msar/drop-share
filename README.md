@@ -43,6 +43,8 @@ https://your-domain/                     upload UI (React)
 https://your-domain/a/<ulid>/             artifact viewer: file list (left) + live preview (right)
 https://your-domain/a/<ulid>/some/path/   a folder inside the artifact (viewer)
 https://your-domain/a/<ulid>/some/file    a specific file inside the artifact (raw bytes)
+https://your-domain/s/<ulid>/             read-only share link (public artifact)
+https://your-domain/s/<ulid>.<share>/     read-only share link (private artifact, see below)
 ```
 
 The trailing slash is load-bearing: a path ending in `/` is a **page**, served
@@ -151,7 +153,7 @@ Every newly-created artifact gets a hidden metadata marker at
 `<ulid>/.artifact.json`:
 
 ```json
-{ "label": "my-site", "createdAt": "2026-08-28T12:00:00.000Z" }
+{ "label": "my-site", "createdAt": "2026-08-28T12:00:00.000Z", "visibility": "public" }
 ```
 
 `label` is a best-effort, purely informational name derived from what was
@@ -183,7 +185,7 @@ lost, the artifact stays locked for good).
 Once locked, mutating requests must present the token:
 
 ```
-GET    /api/artifact/:id?token=<token>        (token is optional even when locked — listings stay public)
+GET    /api/artifact/:id?token=<token>        (token is optional even when locked — listings stay public, unless private)
 POST   /api/upload                            X-Artifact-Token: <token>   (when updating an existing artifact)
 DELETE /api/artifact/:id                      X-Artifact-Token: <token>
 PATCH  /api/artifact/:id                      X-Artifact-Token: <token>   (relabeling, once locked)
@@ -199,9 +201,9 @@ is also saved to `localStorage` (`src/lib/tokens.ts`, keyed by artifact id),
 purely so the **Recent Switcher** can still show modify access for artifacts
 you've unlocked before, without the token round-tripping through the URL of
 every recent link. That means the address bar of a locked artifact's URL does
-carry the token, but the header's **Share** button deliberately strips the
-`token` query param before copying the link
-(`onShare` in `src/components/Header.tsx`) — so the common "copy a link to
+carry the token, but the header's **Share** button deliberately copies the
+read-only `/s/` link instead, without the `token` query param
+(`onShare` in `src/components/ActionsMenu.tsx`) — so the common "copy a link to
 send to someone" path doesn't hand out edit access by accident. Manually
 copying the address bar URL still shares the token, which is worth knowing
 before pasting a locked artifact's URL somewhere public.
@@ -215,8 +217,47 @@ calling a dedicated unlock endpoint (there isn't one — verification piggybacks
 on the existing read path).
 
 A metadata file that exists but fails to parse is treated as protected with
-no valid token (fails closed) rather than as unrestricted, so a corrupted
-`.artifact.json` can never accidentally reopen an artifact.
+no valid token **and as unreadable** (fails closed — every read `404`s)
+rather than as unrestricted, so a corrupted `.artifact.json` can never
+accidentally reopen an artifact or expose a private one.
+
+### Private artifacts and read-only share links
+
+A **locked** artifact can also be made **private** (`PATCH /api/artifact/:id`
+with `{ "visibility": "private" }` and `X-Artifact-Token`, or
+`{ "lock": true, "token": "<token>", "visibility": "private" }` to lock and go
+private in one request — making an unlocked artifact private `409`s, since
+the share token below is derived from the lock token). `{ "visibility":
+"public" }` reverts it. Both are owner-only.
+
+A private artifact is only readable with its **share token**:
+`SHA-1(<lock token>)` as lowercase hex (`deriveShareToken` in
+`worker/lib/artifactMeta.ts`, `src/lib/hash.ts` and `cli/src/token.ts`).
+Nothing extra is stored: the Worker recomputes it from the stored token on
+each request, and because a hash can't be reversed, a share token never
+grants the lock token's modify access. Without a valid share (or owner)
+token, every read path — the viewer shell, raw files, `?render=html`, the
+listing API and the ZIP download — answers the same plain `404` as a missing
+artifact.
+
+Share links live under a separate, always **read-only** route:
+`/s/<ulid>.<share>/…` for a private artifact, `/s/<ulid>/…` for a public one
+(a ULID never contains `.`, so the split is unambiguous). The token is in
+the path, not the query, so relative `<link>`/`<script>`/`<img>` URLs inside
+a shared HTML page keep it automatically. The viewer on `/s/` never sends an
+owner token (even one in its query) and hides every modify control; the APIs
+take the share token as `?share=`. `/s/` responses add `Referrer-Policy:
+no-referrer` (so the token can't leak through links in a shared page) and
+`X-Robots-Tag: noindex`, and private ones are served `Cache-Control: private`.
+The viewer's **Share** button always copies the `/s/` form of the current
+page. The owner's own viewer, on `/a/<ulid>/?token=…`, derives the share
+token and loads raw files through `/s/` too, since a raw file request can't
+carry the owner token.
+
+Share tokens are deterministic: the same lock token always gives the same
+share link, so making an artifact public and then private again revives old
+links, and there's no way to rotate one without a new lock (which isn't
+supported).
 
 If you need access control that isn't per-artifact and opt-in — e.g. gating
 the whole tool — the natural place to add it is
@@ -430,6 +471,15 @@ Point `--server` at your own deployment if you don't want that.
 the tag, builds it, and runs `npm publish`. This needs an `NPM_TOKEN` repo
 secret — an npm access token with publish rights to the `drop-and-share`
 package, added under **Settings → Secrets and variables → Actions**.
+
+**Private artifacts**: `--private` locks-and-privatizes a new upload (needs
+`--password`) or makes an existing one private (needs `--password`/`--token`
+or a saved token); `--public` reverts it. The CLI prints the read-only `/s/`
+share link after every upload.
+
+```bash
+npx drop-and-share upload ./site/ --password 'secret' --private --server https://your-domain
+```
 
 **Building and running the CLI locally**, without publishing:
 

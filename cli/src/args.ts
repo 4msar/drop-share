@@ -12,14 +12,16 @@ export interface Args {
     id?: string;
     token?: string;
     password?: string;
+    /** `--private` / `--public`: change who can view the artifact. */
+    visibility?: "public" | "private";
 }
 
 function printUsageAndExit(): never {
     console.error(
-        "Usage: drop-share upload <path> [<path> ...] [--server <url>] [--extract] [--name <name>] [--token <token>] [--password <password>] [--new]",
+        "Usage: drop-share upload <path> [<path> ...] [--server <url>] [--extract] [--name <name>] [--token <token>] [--password <password>] [--private | --public] [--new]",
     );
     console.error(
-        "       drop-share update <path> [<path> ...] [--server <url>] [--extract] [--id <id>] [--token <token>] [--password <password>]",
+        "       drop-share update <path> [<path> ...] [--server <url>] [--extract] [--id <id>] [--token <token>] [--password <password>] [--private | --public]",
     );
     console.error("");
     console.error(
@@ -27,6 +29,9 @@ function printUsageAndExit(): never {
     );
     console.error(
         "--password unlocks a protected artifact with its web-viewer password, or locks a newly created one; --token takes the derived token directly.",
+    );
+    console.error(
+        "--private makes the artifact viewable only through its read-only share link (it must be locked: pass --password for a new one); --public reverts that.",
     );
     console.error(
         `Environment: ARTIFACT_SERVER can be set instead of passing --server.`,
@@ -48,6 +53,8 @@ export function parseArgs(argv: string[]): Args {
     let id: string | undefined;
     let token: string | undefined;
     let password: string | undefined;
+    let visibility: Args["visibility"];
+    let visibilityFlags = 0;
     const targetPaths: string[] = [];
 
     for (let i = 0; i < rest.length; i++) {
@@ -66,6 +73,9 @@ export function parseArgs(argv: string[]): Args {
             token = rest[++i];
         } else if (arg === "--password") {
             password = rest[++i];
+        } else if (arg === "--private" || arg === "--public") {
+            visibility = arg === "--private" ? "private" : "public";
+            visibilityFlags++;
         } else if (arg.startsWith("--")) {
             console.error(`Unknown option: ${arg}`);
             printUsageAndExit();
@@ -79,6 +89,10 @@ export function parseArgs(argv: string[]): Args {
     }
     if (token !== undefined && password !== undefined) {
         console.error("--token and --password can't be used together.");
+        printUsageAndExit();
+    }
+    if (visibilityFlags > 1) {
+        console.error("--private and --public can't be used together.");
         printUsageAndExit();
     }
     if (name !== undefined && targetPaths.length > 1) {
@@ -96,5 +110,6 @@ export function parseArgs(argv: string[]): Args {
         id,
         token,
         password,
+        visibility,
     };
 }

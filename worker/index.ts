@@ -25,7 +25,12 @@ function registerApiRoutes(app: Hono<{ Bindings: Env }>) {
     // Registered before the bare `/api/artifact/:id` routes so this deeper path
     // is matched by its own handler rather than the `/api/*` catch-all.
     app.get("/api/artifact/:id/download", (c) =>
-        handleArtifactDownload(c.req.param("id"), c.env),
+        handleArtifactDownload(
+            c.req.param("id"),
+            c.env,
+            c.req.header("X-Artifact-Token") ?? c.req.query("token") ?? null,
+            c.req.query("share") ?? null,
+        ),
     );
     app.all("/api/artifact/:id/download", methodNotAllowed);
 
@@ -48,6 +53,7 @@ function registerApiRoutes(app: Hono<{ Bindings: Env }>) {
             c.env,
             c.req.query("path"),
             c.req.query("token") ?? null,
+            c.req.query("share") ?? null,
         ),
     );
 
@@ -78,23 +84,48 @@ function registerApiRoutes(app: Hono<{ Bindings: Env }>) {
 // both shapes are registered.
 const ARTIFACT_BROWSE_PATTERN = /^\/a\/([^/]+)(\/.*)?$/;
 
-function browse(request: Request, env: Env): Promise<Response> | Response {
-    const match = new URL(request.url).pathname.match(ARTIFACT_BROWSE_PATTERN);
-    if (!match) return jsonError(404, "Artifact not found");
+// `/s/<id>[.<shareToken>]/...` - the read-only share route. A ULID never
+// contains `.`, so splitting the first segment on it is unambiguous.
+const SHARE_BROWSE_PATTERN = /^\/s\/([^/.]+)(?:\.([^/]+))?(\/.*)?$/;
 
-    let subPath: string;
+/** Decodes a browse sub-path once, or null for malformed percent-encoding. */
+function decodeSubPath(rawSubPath: string | undefined): string | null {
     try {
         // pathname leaves non-ASCII characters (and other percent-encoded bytes)
         // encoded; decode once here so downstream path validation and R2 keys
         // operate on the real unicode text that was stored. Reading the raw
         // pathname rather than Hono's param helpers keeps that single decode -
         // and the deliberate 404 on malformed input - exactly as it was.
-        subPath = match[2] ? decodeURIComponent(match[2]) : "";
+        return rawSubPath ? decodeURIComponent(rawSubPath) : "";
     } catch {
-        return jsonError(404, "Artifact not found");
+        return null;
     }
+}
+
+function browse(request: Request, env: Env): Promise<Response> | Response {
+    const match = new URL(request.url).pathname.match(ARTIFACT_BROWSE_PATTERN);
+    if (!match) return jsonError(404, "Artifact not found");
+
+    const subPath = decodeSubPath(match[2]);
+    if (subPath === null) return jsonError(404, "Artifact not found");
 
     return handleArtifactBrowse(match[1], subPath, env, request);
+}
+
+function shareBrowse(request: Request, env: Env): Promise<Response> | Response {
+    const match = new URL(request.url).pathname.match(SHARE_BROWSE_PATTERN);
+    if (!match) return jsonError(404, "Artifact not found");
+
+    const [, id, shareToken, rawSubPath] = match;
+    const subPath = decodeSubPath(rawSubPath);
+    if (subPath === null) return jsonError(404, "Artifact not found");
+
+    const segment = shareToken ? `${id}.${shareToken}` : id;
+    return handleArtifactBrowse(id, subPath, env, request, {
+        basePath: `/s/${segment}/`,
+        shareToken: shareToken ?? null,
+        shared: true,
+    });
 }
 
 function registerArtifactBrowseRoutes(app: Hono<{ Bindings: Env }>) {
@@ -106,6 +137,12 @@ function registerArtifactBrowseRoutes(app: Hono<{ Bindings: Env }>) {
     // shortcut, so the two shapes are registered separately here.
     app.all("/a/:id", methodNotAllowed);
     app.all("/a/:id/*", methodNotAllowed);
+
+    app.on(["GET", "HEAD"], ["/s/:seg", "/s/:seg/*"], (c) =>
+        shareBrowse(c.req.raw, c.env),
+    );
+    app.all("/s/:seg", methodNotAllowed);
+    app.all("/s/:seg/*", methodNotAllowed);
 }
 
 function registerFallbackRoutes(app: Hono<{ Bindings: Env }>) {

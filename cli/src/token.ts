@@ -14,6 +14,25 @@ export function derivePasswordToken(artifactId: string, password: string): strin
 }
 
 /**
+ * Derives an artifact's read-only share token from its lock token, the same
+ * way the web viewer and the Worker do: SHA-1(token) as lowercase hex.
+ */
+export function deriveShareToken(token: string): string {
+    return createHash("sha1").update(token).digest("hex");
+}
+
+/** The read-only share URL path: `/s/<id>.<shareToken>/` when private, `/s/<id>/` when public. */
+export function sharePath(
+    id: string,
+    visibility: "public" | "private",
+    token: string | undefined,
+): string {
+    return visibility === "private" && token
+        ? `/s/${id}.${deriveShareToken(token)}/`
+        : `/s/${id}/`;
+}
+
+/**
  * Picks the token to send for this upload: an explicit `--token` wins, then a
  * `--password` derived against the artifact being updated, then the token
  * saved from an earlier run. A password can't be derived for a fresh upload -

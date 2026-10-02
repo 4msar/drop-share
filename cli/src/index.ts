@@ -11,7 +11,9 @@ import {
     removeEntry,
     setEntry,
 } from "./state.js";
-import { derivePasswordToken, resolveToken } from "./token.js";
+import { derivePasswordToken, resolveToken, sharePath } from "./token.js";
+
+type Visibility = "public" | "private";
 
 const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024;
 const MAX_ARTIFACT_SIZE_BYTES = 10 * 1024 * 1024;
@@ -191,16 +193,21 @@ async function uploadDirectory(
     return postUpload(server, form, token);
 }
 
-/** Locks a just-created artifact the same way the web viewer does: `PATCH` with the derived token. */
+/**
+ * Locks a just-created artifact the same way the web viewer does: `PATCH`
+ * with the derived token - and, with `visibility`, sets that in the same
+ * request so it can never end up locked but still public.
+ */
 async function lockArtifact(
     server: string,
     id: string,
     token: string,
+    visibility?: Visibility,
 ): Promise<void> {
     const response = await fetch(`${server}/api/artifact/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ lock: true, token }),
+        body: JSON.stringify({ lock: true, token, visibility }),
     });
     let body: { success?: boolean; locked?: boolean; error?: string };
     try {
@@ -213,16 +220,70 @@ async function lockArtifact(
     }
 }
 
+/** Changes an existing (locked) artifact's visibility; needs its token. */
+async function setVisibility(
+    server: string,
+    id: string,
+    token: string,
+    visibility: Visibility,
+): Promise<void> {
+    const response = await fetch(`${server}/api/artifact/${id}`, {
+        method: "PATCH",
+        headers: {
+            "Content-Type": "application/json",
+            "X-Artifact-Token": token,
+        },
+        body: JSON.stringify({ visibility }),
+    });
+    let body: { success?: boolean; error?: string };
+    try {
+        body = (await response.json()) as typeof body;
+    } catch {
+        body = {};
+    }
+    if (!response.ok || !body.success) {
+        throw new Error(
+            body.error ?? `Changing visibility failed (HTTP ${response.status})`,
+        );
+    }
+}
+
+/** Best-effort read of an artifact's current visibility, for printing the right share link. */
+async function fetchVisibility(
+    server: string,
+    id: string,
+    token: string | undefined,
+): Promise<Visibility> {
+    try {
+        const query = token ? `?token=${encodeURIComponent(token)}` : "";
+        const response = await fetch(`${server}/api/artifact/${id}${query}`);
+        const body = (await response.json()) as { visibility?: string };
+        return body.visibility === "private" ? "private" : "public";
+    } catch {
+        return "public";
+    }
+}
+
 function printResult(
     server: string,
     result: UploadResult,
     label: string,
+    share?: { visibility: Visibility; token: string | undefined },
 ): void {
     console.log("");
     console.log("Upload complete.");
     console.log("");
     console.log(label);
     console.log(`${server}${result.url}`);
+    if (share) {
+        console.log("");
+        console.log(
+            share.visibility === "private"
+                ? "Private - read-only share link:"
+                : "Read-only share link:",
+        );
+        console.log(`${server}${sharePath(result.id, share.visibility, share.token)}`);
+    }
 }
 
 async function performUpload(
@@ -336,6 +397,17 @@ async function main(): Promise<void> {
     const attemptId = plan.action === "update" ? plan.id : undefined;
     const token = resolveToken(args, plan, existing);
 
+    // Checked before uploading anything: a private artifact must be locked,
+    // and a new one only gets locked when --password is given.
+    if (args.visibility === "private" && plan.action === "create" && args.password === undefined) {
+        console.error("--private needs --password for a new artifact (it must be locked).");
+        process.exit(1);
+    }
+    if (args.visibility !== undefined && plan.action === "update" && token === undefined) {
+        console.error(`--${args.visibility} needs the artifact's --password or --token.`);
+        process.exit(1);
+    }
+
     try {
         const result = await performUpload(args, attemptId, token);
         if (plan.action === "create") {
@@ -343,7 +415,15 @@ async function main(): Promise<void> {
             return;
         }
         saveResult(statePath, args, result, token);
-        printResult(args.server, result, "Updated artifact:");
+        if (args.visibility !== undefined && token !== undefined) {
+            await setVisibility(args.server, result.id, token, args.visibility);
+        }
+        printResult(args.server, result, "Updated artifact:", {
+            visibility:
+                args.visibility ??
+                (await fetchVisibility(args.server, result.id, token)),
+            token,
+        });
         return;
     } catch (error) {
         // Re-throw anything that isn't "the artifact this update targeted is
@@ -394,13 +474,17 @@ async function finishFreshUpload(
 ): Promise<void> {
     if (args.password === undefined) {
         saveResult(statePath, args, result, token);
-        printResult(args.server, result, "Artifact:");
+        printResult(args.server, result, "Artifact:", {
+            visibility: "public",
+            token,
+        });
         return;
     }
 
     const lockToken = derivePasswordToken(result.id, args.password);
+    const visibility = args.visibility ?? "public";
     try {
-        await lockArtifact(args.server, result.id, lockToken);
+        await lockArtifact(args.server, result.id, lockToken, args.visibility);
     } catch (error) {
         // The upload itself succeeded - remember it so a retry updates this
         // artifact rather than creating yet another unlocked one.
@@ -414,7 +498,14 @@ async function finishFreshUpload(
         process.exit(1);
     }
     saveResult(statePath, args, result, lockToken);
-    printResult(args.server, result, "Artifact (locked):");
+    printResult(
+        args.server,
+        result,
+        visibility === "private"
+            ? "Artifact (locked, private):"
+            : "Artifact (locked):",
+        { visibility, token: lockToken },
+    );
 }
 
 main().catch((error: unknown) => {

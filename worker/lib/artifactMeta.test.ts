@@ -4,6 +4,7 @@ import {
   createArtifactMetadata,
   deriveArtifactLabel,
   deriveAuthStateForMetadata,
+  deriveShareToken,
   metadataObjectKey,
   parseArtifactMetadata,
   serializeArtifactMetadata,
@@ -21,7 +22,11 @@ describe("metadataObjectKey", () => {
 describe("createArtifactMetadata / serializeArtifactMetadata / parseArtifactMetadata", () => {
   it("round-trips a freshly created, unprotected metadata object", () => {
     const created = createArtifactMetadata("Client delivery", new Date("2026-08-28T12:00:00.000Z"));
-    expect(created).toEqual({ label: "Client delivery", createdAt: "2026-08-28T12:00:00.000Z" });
+    expect(created).toEqual({
+      label: "Client delivery",
+      createdAt: "2026-08-28T12:00:00.000Z",
+      visibility: "public",
+    });
 
     const parsed = parseArtifactMetadata(serializeArtifactMetadata(created));
     expect(parsed).toEqual(created);
@@ -38,7 +43,12 @@ describe("createArtifactMetadata / serializeArtifactMetadata / parseArtifactMeta
   });
 
   it("round-trips a protected metadata object", () => {
-    const protectedMeta = { label: "x", createdAt: "2026-08-28T12:00:00.000Z", token: "secret" };
+    const protectedMeta = {
+      label: "x",
+      createdAt: "2026-08-28T12:00:00.000Z",
+      token: "secret",
+      visibility: "private" as const,
+    };
     expect(parseArtifactMetadata(serializeArtifactMetadata(protectedMeta))).toEqual(protectedMeta);
   });
 
@@ -48,7 +58,23 @@ describe("createArtifactMetadata / serializeArtifactMetadata / parseArtifactMeta
       label: "x",
       createdAt: "2026-08-28T12:00:00.000Z",
       futureField: 42,
+      visibility: "public",
     });
+  });
+
+  it("defaults a missing visibility to public", () => {
+    const raw = JSON.stringify({ label: "x", createdAt: "2026-08-28T12:00:00.000Z" });
+    expect(parseArtifactMetadata(raw)?.visibility).toBe("public");
+  });
+
+  it("rejects an unknown visibility value", () => {
+    const raw = JSON.stringify({ label: "x", createdAt: "x", token: "t", visibility: "secret" });
+    expect(parseArtifactMetadata(raw)).toBeNull();
+  });
+
+  it("rejects a private artifact without a token", () => {
+    const raw = JSON.stringify({ label: "x", createdAt: "x", visibility: "private" });
+    expect(parseArtifactMetadata(raw)).toBeNull();
   });
 
   it("rejects malformed JSON", () => {
@@ -110,31 +136,76 @@ describe("timingSafeEqual", () => {
   });
 });
 
+describe("deriveShareToken", () => {
+  it("is SHA-1 of the owner token as lowercase hex", async () => {
+    // SHA-1("abc"), the standard FIPS 180 test vector.
+    expect(await deriveShareToken("abc")).toBe("a9993e364706816aba3e25717850c26c9cd0d89d");
+  });
+});
+
 describe("deriveAuthStateForMetadata", () => {
-  const base = { label: "x", createdAt: "2026-08-28T12:00:00.000Z" };
+  const base = { label: "x", createdAt: "2026-08-28T12:00:00.000Z", visibility: "public" as const };
+  const privateMeta = { ...base, token: "secret", visibility: "private" as const };
 
-  it("is unlocked and modifiable when there is no token", () => {
-    expect(deriveAuthStateForMetadata(base, null)).toEqual({ locked: false, canModify: true });
-  });
-
-  it("is locked and not modifiable when a token exists but none was supplied", () => {
-    expect(deriveAuthStateForMetadata({ ...base, token: "secret" }, null)).toEqual({
-      locked: true,
-      canModify: false,
+  it("is unlocked, modifiable and readable when there is no token", async () => {
+    expect(await deriveAuthStateForMetadata(base, null)).toEqual({
+      locked: false,
+      canModify: true,
+      readable: true,
     });
   });
 
-  it("is locked and not modifiable when the supplied token is wrong", () => {
-    expect(deriveAuthStateForMetadata({ ...base, token: "secret" }, "wrong")).toEqual({
+  it("is locked and not modifiable when a token exists but none was supplied", async () => {
+    expect(await deriveAuthStateForMetadata({ ...base, token: "secret" }, null)).toEqual({
       locked: true,
       canModify: false,
+      readable: true,
     });
   });
 
-  it("is locked and modifiable when the supplied token matches", () => {
-    expect(deriveAuthStateForMetadata({ ...base, token: "secret" }, "secret")).toEqual({
+  it("is locked and not modifiable when the supplied token is wrong", async () => {
+    expect(await deriveAuthStateForMetadata({ ...base, token: "secret" }, "wrong")).toEqual({
+      locked: true,
+      canModify: false,
+      readable: true,
+    });
+  });
+
+  it("is locked and modifiable when the supplied token matches", async () => {
+    expect(await deriveAuthStateForMetadata({ ...base, token: "secret" }, "secret")).toEqual({
       locked: true,
       canModify: true,
+      readable: true,
+    });
+  });
+
+  it("is not readable when private and no token is supplied", async () => {
+    expect((await deriveAuthStateForMetadata(privateMeta, null)).readable).toBe(false);
+  });
+
+  it("is not readable when private and the share token is wrong", async () => {
+    expect((await deriveAuthStateForMetadata(privateMeta, null, "wrong")).readable).toBe(false);
+  });
+
+  it("is readable but not modifiable when private with the matching share token", async () => {
+    const share = await deriveShareToken("secret");
+    expect(await deriveAuthStateForMetadata(privateMeta, null, share)).toEqual({
+      locked: true,
+      canModify: false,
+      readable: true,
+    });
+  });
+
+  it("never accepts the share token as the owner token", async () => {
+    const share = await deriveShareToken("secret");
+    expect((await deriveAuthStateForMetadata(privateMeta, share)).canModify).toBe(false);
+  });
+
+  it("is readable and modifiable when private with the owner token", async () => {
+    expect(await deriveAuthStateForMetadata(privateMeta, "secret")).toEqual({
+      locked: true,
+      canModify: true,
+      readable: true,
     });
   });
 });

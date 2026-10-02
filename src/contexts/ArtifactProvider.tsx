@@ -9,7 +9,9 @@ import {
     type ArtifactListing,
     ArtifactNotFoundError,
     fetchArtifactListing,
+    shareBasePath,
 } from "../lib/artifact";
+import { deriveShareToken } from "../lib/hash";
 import { getStoredToken, saveToken } from "../lib/tokens";
 import { useRecentItemsActions } from "./useRecentItems";
 import {
@@ -26,6 +28,10 @@ interface ArtifactProviderProps {
      * navigation can never pair a new path with the previous folder's files. */
     routePath: string;
     token: string | null;
+    /** The share token from a `/s/<id>.<shareToken>/` link, if any. */
+    shareToken?: string | null;
+    /** Opened through a `/s/` share link: never modifiable. */
+    readOnly?: boolean;
     /** Called with a freshly derived lock/unlock token; the caller owns
      * where that token is persisted (this app keeps it in the URL). */
     onTokenChange: (token: string) => void;
@@ -42,6 +48,8 @@ export function ArtifactProvider({
     id,
     routePath,
     token,
+    shareToken: routeShareToken = null,
+    readOnly = false,
     onTokenChange,
     children,
 }: ArtifactProviderProps) {
@@ -51,6 +59,10 @@ export function ArtifactProvider({
     const [actionError, setActionError] = useState<string | null>(null);
     const [deleted, setDeleted] = useState(false);
     const [reloadToken, setReloadToken] = useState(0);
+    // The owner's share token, derived from their (valid) lock token.
+    const [ownerShareToken, setOwnerShareToken] = useState<string | null>(
+        null,
+    );
 
     useEffect(() => {
         // `cancelled` matters because navigating between folders quickly can
@@ -58,17 +70,35 @@ export function ArtifactProvider({
         // the folder you just left can overwrite the one you're now looking at.
         let cancelled = false;
 
-        fetchArtifactListing(id, routePath, token).then(
-            (next) => {
+        // A share link is read-only, so it never sends an owner token.
+        const ownerToken = readOnly ? null : token;
+        fetchArtifactListing(id, routePath, ownerToken, routeShareToken).then(
+            async (next) => {
+                // Derived before the listing is applied, so a private
+                // artifact's preview never renders against `/a/` first.
+                const derived =
+                    ownerToken && next.locked && next.canModify
+                        ? await deriveShareToken(ownerToken)
+                        : null;
                 if (cancelled) return;
+                setOwnerShareToken(derived);
                 setListing(next);
                 setLoadError(null);
-                addItem(id, undefined, next.label);
+                addItem(
+                    id,
+                    undefined,
+                    next.label,
+                    readOnly ? shareBasePath(id, routeShareToken) : undefined,
+                );
                 // A URL can carry a valid token without this browser ever
                 // having locked the artifact itself (e.g. a shared link) -
                 // persist it so the Recent Switcher keeps modify access.
-                if (token && next.canModify && getStoredToken(id) !== token) {
-                    saveToken(id, token);
+                if (
+                    ownerToken &&
+                    next.canModify &&
+                    getStoredToken(id) !== ownerToken
+                ) {
+                    saveToken(id, ownerToken);
                 }
             },
             (error: unknown) => {
@@ -86,7 +116,7 @@ export function ArtifactProvider({
         return () => {
             cancelled = true;
         };
-    }, [id, routePath, token, reloadToken, addItem]);
+    }, [id, routePath, token, routeShareToken, readOnly, reloadToken, addItem]);
 
     const reload = useCallback(
         () => setReloadToken((count) => count + 1),
@@ -103,22 +133,49 @@ export function ArtifactProvider({
     const markDeleted = useCallback(() => setDeleted(true), []);
 
     const subPath = listing?.path ?? routePath;
+    const visibility = listing?.visibility ?? "public";
+    const shareToken = readOnly ? routeShareToken : ownerShareToken;
+    const viewerBasePath = readOnly
+        ? shareBasePath(id, routeShareToken)
+        : `/a/${id}/`;
+    const fileBasePath =
+        !readOnly && visibility === "private" && shareToken
+            ? shareBasePath(id, shareToken)
+            : viewerBasePath;
 
     const state = useMemo<ArtifactState>(
         () => ({
             id,
             subPath,
             isRoot: subPath === "",
-            token,
+            token: readOnly ? null : token,
             label: listing?.label,
             locked: listing?.locked ?? false,
-            canModify: listing?.canModify ?? false,
+            canModify: !readOnly && (listing?.canModify ?? false),
+            readOnly,
+            visibility,
+            shareToken,
+            viewerBasePath,
+            fileBasePath,
             listing,
             loadError,
             actionError,
             deleted,
         }),
-        [id, subPath, token, listing, loadError, actionError, deleted],
+        [
+            id,
+            subPath,
+            token,
+            readOnly,
+            visibility,
+            shareToken,
+            viewerBasePath,
+            fileBasePath,
+            listing,
+            loadError,
+            actionError,
+            deleted,
+        ],
     );
 
     const actions = useMemo<ArtifactActions>(

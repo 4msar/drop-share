@@ -52,10 +52,13 @@ export function RecentList({
                             </span>
                         ) : (
                             <Link
-                                to={withToken(
-                                    `/a/${item.id}/`,
-                                    getStoredToken(item.id),
-                                )}
+                                to={
+                                    item.shareUrl ??
+                                    withToken(
+                                        `/a/${item.id}/`,
+                                        getStoredToken(item.id),
+                                    )
+                                }
                                 onClick={() => onSelect?.(item.id)}
                                 className={cn(
                                     "block rounded-lg transition-all px-3 py-2 text-left no-underline hover:bg-brand-soft",

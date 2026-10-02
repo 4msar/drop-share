@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Button } from "./Button";
 import { Modal } from "./Modal";
-import { lockArtifact } from "../lib/artifact";
+import { lockArtifact, setArtifactVisibility } from "../lib/artifact";
 import { hashPassword } from "../lib/hash";
 import { saveToken } from "../lib/tokens";
 import { useArtifactActions, useArtifactState } from "../contexts/useArtifact";
@@ -21,6 +21,7 @@ export function LockDialog({ onClose }: LockDialogProps) {
     const { tokenObtained, reportError } = useArtifactActions();
     const [password, setPassword] = useState("");
     const [passwordConfirm, setPasswordConfirm] = useState("");
+    const [makePrivate, setMakePrivate] = useState(false);
     const [locking, setLocking] = useState(false);
     const [locked, setLocked] = useState(false);
 
@@ -37,7 +38,13 @@ export function LockDialog({ onClose }: LockDialogProps) {
         reportError(null);
         try {
             const token = await hashPassword(artifactId, password);
-            await lockArtifact(artifactId, token);
+            // Locking and going private in one request, so a failure can't
+            // leave it locked but still public.
+            if (makePrivate) {
+                await setArtifactVisibility(artifactId, "private", token, true);
+            } else {
+                await lockArtifact(artifactId, token);
+            }
             saveToken(artifactId, token);
             setLocked(true);
             tokenObtained(token);
@@ -61,6 +68,8 @@ export function LockDialog({ onClose }: LockDialogProps) {
                 <p className="mb-4 text-xs text-body">
                     Your password is now required to make further changes.
                     Keep it safe - it can&apos;t be recovered if forgotten.
+                    {makePrivate &&
+                        " It's also private now: use Share to copy a view-only link."}
                 </p>
                 <Button
                     variant="primary"
@@ -116,8 +125,16 @@ export function LockDialog({ onClose }: LockDialogProps) {
                 placeholder="Confirm password"
                 value={passwordConfirm}
                 onChange={(event) => setPasswordConfirm(event.target.value)}
-                className="mb-4 w-full rounded-md border border-edge bg-surface px-2 py-1.5 text-xs"
+                className="mb-3 w-full rounded-md border border-edge bg-surface px-2 py-1.5 text-xs"
             />
+            <label className="mb-4 flex items-center gap-2 text-xs text-body">
+                <input
+                    type="checkbox"
+                    checked={makePrivate}
+                    onChange={(event) => setMakePrivate(event.target.checked)}
+                />
+                Also make private (view only via share link)
+            </label>
             <div className="flex gap-2">
                 <Button
                     type="button"

@@ -1,5 +1,6 @@
 import {
     type ArtifactMetadata,
+    type ArtifactVisibility,
     createArtifactMetadata,
     loadArtifactAuth,
     MAX_LABEL_LENGTH,
@@ -16,12 +17,13 @@ interface ArtifactUpdateRequest {
     label?: unknown;
     lock?: unknown;
     token?: unknown;
+    visibility?: unknown;
 }
 
 /**
  * Single route for every mutation of an artifact's `.artifact.json`: setting
- * its label and/or protecting it with a client-supplied token. Both can be
- * requested in the same call. Unlike locking, a label edit is not "one-time" -
+ * its label, protecting it with a client-supplied token, and/or switching its
+ * visibility. Any combination can be requested in the same call. Unlike locking, a label edit is not "one-time" -
  * an unprotected artifact's label can be changed by anyone, same as an
  * unprotected artifact can be uploaded into or deleted by anyone. Once
  * protected, every mutation here - including a later label edit - requires
@@ -38,7 +40,18 @@ export async function handleArtifactUpdate(
     const request = (body && typeof body === "object" ? body : {}) as ArtifactUpdateRequest;
     const wantsLock = request.lock === true;
     const wantsLabel = typeof request.label === "string";
-    if (!wantsLock && !wantsLabel) return jsonError(400, "Nothing to update");
+    const wantsVisibility = request.visibility !== undefined;
+    if (!wantsLock && !wantsLabel && !wantsVisibility) {
+        return jsonError(400, "Nothing to update");
+    }
+
+    let visibility: ArtifactVisibility | undefined;
+    if (wantsVisibility) {
+        if (request.visibility !== "public" && request.visibility !== "private") {
+            return jsonError(400, 'Visibility must be "public" or "private"');
+        }
+        visibility = request.visibility;
+    }
 
     let normalizedLabel: string | undefined;
     if (wantsLabel) {
@@ -72,6 +85,11 @@ export async function handleArtifactUpdate(
     if (wantsLock && auth.auth.locked) return jsonError(409, "Artifact is already protected");
     // Any other mutation on a protected artifact requires proving ownership.
     if (!wantsLock && auth.auth.locked && !auth.auth.canModify) return jsonError(403, "Forbidden");
+    // A private artifact's share token is derived from its lock token, so it
+    // has to be locked first (or in this same request).
+    if (visibility === "private" && !auth.auth.locked && !wantsLock) {
+        return jsonError(409, "Lock the artifact before making it private");
+    }
 
     if (auth.metadata === null) {
         // No metadata object at all - could be a legacy artifact (real files,
@@ -84,6 +102,7 @@ export async function handleArtifactUpdate(
     const next: ArtifactMetadata = { ...(auth.metadata ?? createArtifactMetadata("")) };
     if (wantsLabel) next.label = normalizedLabel!;
     if (wantsLock) next.token = lockToken;
+    if (visibility !== undefined) next.visibility = visibility;
 
     await env.ARTIFACTS_BUCKET.put(metadataObjectKey(id), serializeArtifactMetadata(next), {
         httpMetadata: { contentType: METADATA_CONTENT_TYPE },
@@ -94,6 +113,7 @@ export async function handleArtifactUpdate(
         label: next.label,
         locked: next.token !== undefined,
         canModify: true,
+        visibility: next.visibility,
     });
     response.headers.set("Cache-Control", "no-store");
     return response;

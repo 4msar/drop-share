@@ -7,6 +7,7 @@ import { PreviewPane } from "../components/PreviewPane";
 import {
     type ArtifactFile,
     type FileSortMode,
+    parseShareSegment,
     pickDefaultPreview,
     sortFiles,
 } from "../lib/artifact";
@@ -16,15 +17,23 @@ import { ErrorToast } from "../components/ErrorToast";
 import { ArtifactProvider } from "../contexts/ArtifactProvider";
 import { useArtifactActions, useArtifactState } from "../contexts/useArtifact";
 
-export default function ViewerPage() {
+interface ViewerPageProps {
+    /** Mounted on the read-only `/s/<id>[.<shareToken>]/` share route. */
+    shared?: boolean;
+}
+
+export default function ViewerPage({ shared = false }: ViewerPageProps) {
     const params = useParams();
     const [searchParams, setSearchParams] = useSearchParams();
-    const id = params.id ?? "";
+    const { id, shareToken } = shared
+        ? parseShareSegment(params.seg ?? "")
+        : { id: params.id ?? "", shareToken: null };
     // The route's path is what we fetch; what we *render* comes from the
     // listing itself (ArtifactProvider's `subPath`), so a folder navigation
     // can never pair the new path with the previous folder's file names.
     const routePath = params["*"] ?? "";
-    const token = searchParams.get("token");
+    // A share link is read-only: an owner token in its query is ignored.
+    const token = shared ? null : searchParams.get("token");
 
     // Locking and unlocking both end with this browser holding a fresh,
     // valid token, so it's folded into the URL immediately - ArtifactProvider's
@@ -46,6 +55,8 @@ export default function ViewerPage() {
             id={id}
             routePath={routePath}
             token={token}
+            shareToken={shareToken}
+            readOnly={shared}
             onTokenChange={onTokenChange}
         >
             <ViewerPageContent />

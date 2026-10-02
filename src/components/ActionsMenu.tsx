@@ -2,12 +2,17 @@ import { useState } from "react";
 import { Button } from "./Button";
 import { LockDialog } from "./LockDialog";
 import { UnlockDialog } from "./UnlockDialog";
-import { useArtifactState } from "../contexts/useArtifact";
-import { artifactDownloadUrl } from "../lib/artifact";
+import { useArtifactActions, useArtifactState } from "../contexts/useArtifact";
+import {
+    artifactDownloadUrl,
+    setArtifactVisibility,
+    shareBasePath,
+} from "../lib/artifact";
 import {
     ActionIcon,
     DownloadIcon,
     EditIcon,
+    EyeIcon,
     LockIcon,
     ShareIcon,
     TrashIcon,
@@ -43,8 +48,21 @@ export function ActionsMenu({
     onUpload,
     onDelete,
 }: ActionsMenuProps) {
-    const { id, isRoot, canModify, locked } = useArtifactState();
+    const {
+        id,
+        subPath,
+        isRoot,
+        canModify,
+        locked,
+        readOnly,
+        token,
+        visibility,
+        shareToken,
+    } = useArtifactState();
+    const { reload, reportError } = useArtifactActions();
+    const isPrivate = visibility === "private";
     const [open, setOpen] = useState(false);
+    const [changingVisibility, setChangingVisibility] = useState(false);
     const [shareLabel, setShareLabel] = useState("Share");
     const [lockDialogOpen, setLockDialogOpen] = useState(false);
     const [unlockDialogOpen, setUnlockDialogOpen] = useState(false);
@@ -58,16 +76,43 @@ export function ActionsMenu({
 
     async function onShare() {
         try {
+            // Always the read-only /s/ form of the current page - never the
+            // owner's `?token=`, so sharing can't hand out edit access.
             const currentUrl = new URL(window.location.href);
-            if (currentUrl.searchParams.has("token")) {
-                currentUrl.searchParams.delete("token");
-            }
-            await navigator.clipboard.writeText(currentUrl.href);
+            currentUrl.searchParams.delete("token");
+            const shareUrl = new URL(
+                `${shareBasePath(id, isPrivate ? shareToken : null)}${subPath}${currentUrl.search}`,
+                currentUrl.origin,
+            );
+            await navigator.clipboard.writeText(shareUrl.href);
             setShareLabel("Copied!");
         } catch {
             setShareLabel("Copy failed");
         }
         window.setTimeout(() => setShareLabel("Share"), COPY_FEEDBACK_MS);
+    }
+
+    async function onToggleVisibility() {
+        if (token === null) return;
+        const next = isPrivate ? "public" : "private";
+        const message = isPrivate
+            ? "Make this artifact public? Anyone with its link will be able to view it."
+            : "Make this artifact private? Only people with its share link will be able to view it.";
+        if (!window.confirm(message)) return;
+        setChangingVisibility(true);
+        reportError(null);
+        try {
+            await setArtifactVisibility(id, next, token);
+            reload();
+        } catch (error) {
+            reportError(
+                error instanceof Error
+                    ? error.message
+                    : "Failed to change visibility.",
+            );
+        } finally {
+            setChangingVisibility(false);
+        }
     }
 
     return (
@@ -99,7 +144,10 @@ export function ActionsMenu({
                             {shareLabel}
                         </button>
                         <a
-                            href={artifactDownloadUrl(id)}
+                            href={artifactDownloadUrl(
+                                id,
+                                readOnly && isPrivate ? shareToken : null,
+                            )}
                             download
                             onClick={() => scheduleClose()}
                             className={`${ITEM} no-underline`}
@@ -134,7 +182,21 @@ export function ActionsMenu({
                                 {uploading ? "Uploading…" : "Upload more"}
                             </button>
                         )}
-                        {!locked && (
+                        {locked && canModify && (
+                            <button
+                                type="button"
+                                disabled={changingVisibility}
+                                onClick={() => {
+                                    scheduleClose();
+                                    void onToggleVisibility();
+                                }}
+                                className={ITEM}
+                            >
+                                <EyeIcon className="size-3.5 shrink-0" />
+                                {isPrivate ? "Make public" : "Make private"}
+                            </button>
+                        )}
+                        {!locked && !readOnly && (
                             <button
                                 type="button"
                                 onClick={() => {
@@ -147,7 +209,7 @@ export function ActionsMenu({
                                 Lock
                             </button>
                         )}
-                        {locked && !canModify && (
+                        {locked && !canModify && !readOnly && (
                             <button
                                 type="button"
                                 onClick={() => {

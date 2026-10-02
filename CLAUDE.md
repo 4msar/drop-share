@@ -74,8 +74,18 @@ browser or gets stored. Once locked, mutations require `X-Artifact-Token` (or `?
 a metadata file that fails to parse is treated as protected/fails-closed, never unrestricted. The
 token lives in the URL's `?token=` query param during a session and is saved to `localStorage`
 (`src/lib/tokens.ts`, keyed by artifact id) after a successful lock/unlock so the Recent Switcher
-retains modify access — the Share button strips `?token=` before copying a link specifically to
+retains modify access — the Share button copies the read-only `/s/` form of the page (never `?token=`) specifically to
 avoid handing out edit access by accident.
+
+**Private visibility**: a locked artifact can be made `private` (`visibility` in `.artifact.json`,
+set via the same PATCH route, owner-only, `409` if unlocked). Its **share token** is
+`SHA-1(<lock token>)` — recomputed server-side, never stored (`deriveShareToken`, mirrored in
+`src/lib/hash.ts` and `cli/src/token.ts`). Every read path (shell, raw files, listing, download) checks
+`auth.readable` and answers a plain 404 without a valid share or owner token; malformed metadata is
+unreadable too. Share links are the always-read-only `/s/<id>.<shareToken>/…` route (`/s/<id>/…` when
+public) — the token sits in the path so relative assets inside shared HTML keep it. The viewer
+distinguishes `viewerBasePath` (in-app navigation) from `fileBasePath` (raw bytes, `/s/` for a private
+artifact even for the owner).
 
 **HTML/SVG containment without a separate origin**: rather than isolating uploaded content on a
 `usercontent.*` subdomain, HTML and SVG responses get

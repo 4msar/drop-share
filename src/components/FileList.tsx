@@ -64,7 +64,8 @@ export function FileList({
     onPreview,
     open,
 }: FileListProps) {
-    const { id, subPath, token, canModify } = useArtifactState();
+    const { id, subPath, token, canModify, viewerBasePath, fileBasePath } =
+        useArtifactState();
     const { reload, reportError } = useArtifactActions();
     const parent = parentPath(subPath);
     const [dragActive, setDragActive] = useState(false);
@@ -194,7 +195,7 @@ export function FileList({
                         </span>
                         <Link
                             className={NAME}
-                            to={withToken(`/a/${id}/${parent}`, token)}
+                            to={withToken(`${viewerBasePath}${parent}`, token)}
                         >
                             .. (parent directory)
                         </Link>
@@ -206,12 +207,15 @@ export function FileList({
                         <ParentFolderIcon className="size-4" />
                         <Link
                             className={NAME}
-                            to={withToken(`/a/${id}/${subPath}${dir}`, token)}
+                            to={withToken(
+                                `${viewerBasePath}${subPath}${dir}`,
+                                token,
+                            )}
                         >
                             {dir}
                         </Link>
                         <FileActionsMenu
-                            href={`/a/${id}/${subPath}${dir}`}
+                            href={`${viewerBasePath}${subPath}${dir}`}
                             label={dir}
                             canDelete={false}
                         />
@@ -219,7 +223,7 @@ export function FileList({
                 ))}
 
                 {files.map((file) => {
-                    const href = fileUrl(id, subPath, file.name);
+                    const href = fileUrl(fileBasePath, subPath, file.name);
                     const isActive = file.name === activeName;
                     return (
                         <li

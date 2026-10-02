@@ -24,7 +24,7 @@ export function PreviewPane({
     sidebarOpen,
     onToggle,
 }: PreviewPaneProps) {
-    const { id, subPath } = useArtifactState();
+    const { subPath, fileBasePath } = useArtifactState();
     const sectionRef = useRef<HTMLElement | null>(null);
     const [sourceMode, setSourceMode] = useState<{
         fileName: string;
@@ -74,8 +74,8 @@ export function PreviewPane({
         selected === null
             ? null
             : showSource
-              ? fileUrl(id, subPath, selected.name)
-              : previewUrl(id, subPath, selected);
+              ? fileUrl(fileBasePath, subPath, selected.name)
+              : previewUrl(fileBasePath, subPath, selected);
 
     const placeholder =
         files.length === 0

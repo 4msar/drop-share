@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { hashPassword } from "./hash";
+import { deriveShareToken, hashPassword } from "./hash";
 
 describe("hashPassword", () => {
     it("returns a 40-character lowercase hex digest", async () => {
@@ -30,5 +30,19 @@ describe("hashPassword", () => {
         const a = await hashPassword("artifact-1", "hunter2");
         const b = await hashPassword("artifact-2", "hunter2");
         expect(a).not.toBe(b);
+    });
+});
+
+describe("deriveShareToken", () => {
+    it("is SHA-1 of the lock token, matching the Worker's derivation", async () => {
+        // SHA-1("abc"), the standard FIPS 180 test vector.
+        expect(await deriveShareToken("abc")).toBe(
+            "a9993e364706816aba3e25717850c26c9cd0d89d",
+        );
+    });
+
+    it("never equals the token it was derived from", async () => {
+        const token = await hashPassword("artifact-1", "hunter2");
+        expect(await deriveShareToken(token)).not.toBe(token);
     });
 });

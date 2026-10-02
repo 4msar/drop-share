@@ -18,7 +18,15 @@ const DELETED_REDIRECT_DELAY_MS = 3000;
 
 export function Header() {
     const navigate = useNavigate();
-    const { id: currentId, subPath, isRoot, label, token } = useArtifactState();
+    const {
+        id: currentId,
+        subPath,
+        isRoot,
+        label,
+        token,
+        visibility,
+        readOnly,
+    } = useArtifactState();
     const { reload, reportError, markDeleted } = useArtifactActions();
     const { removeItem } = useRecentItemsActions();
     const { toggleTheme } = useThemeActions();
@@ -109,6 +117,22 @@ export function Header() {
                     <img src="/logo.svg" alt="" className="size-5" />
                 </Link>
                 <RecentSwitcher title={title} />
+                {visibility === "private" && (
+                    <span
+                        className="shrink-0 rounded border border-edge px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-body"
+                        title="Only people with the share link can view this artifact"
+                    >
+                        Private
+                    </span>
+                )}
+                {readOnly && (
+                    <span
+                        className="shrink-0 rounded border border-edge px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-body"
+                        title="Opened from a share link - view only"
+                    >
+                        View only
+                    </span>
+                )}
                 <span className="hidden truncate text-xs text-body sm:inline">
                     {meta}
                 </span>

@@ -1,5 +1,7 @@
 export type FileSortMode = "newest" | "name";
 
+export type ArtifactVisibility = "public" | "private";
+
 export interface ArtifactFile {
     name: string;
     size: number;
@@ -25,6 +27,8 @@ export interface ArtifactListing {
     canModify: boolean;
     /** Human-readable label derived at creation time (e.g. the uploaded file/folder name). Absent for legacy artifacts with no metadata. */
     label?: string;
+    /** A private artifact is only readable with its share (or owner) token. */
+    visibility: ArtifactVisibility;
 }
 
 interface ListingResponse extends ArtifactListing {
@@ -48,15 +52,39 @@ export function withToken(path: string, token: string | null): string {
         : path;
 }
 
+/**
+ * The read-only share route's URL prefix: `/s/<id>.<shareToken>/` for a
+ * private artifact, `/s/<id>/` for a public one. The token rides in the path
+ * (not the query) so relative asset URLs inside a shared HTML page keep it.
+ */
+export function shareBasePath(id: string, shareToken: string | null): string {
+    return shareToken ? `/s/${id}.${shareToken}/` : `/s/${id}/`;
+}
+
+/** Splits a `/s/` route segment (`<id>` or `<id>.<shareToken>`). An id never contains `.`. */
+export function parseShareSegment(segment: string): {
+    id: string;
+    shareToken: string | null;
+} {
+    const dot = segment.indexOf(".");
+    if (dot === -1) return { id: segment, shareToken: null };
+    return {
+        id: segment.slice(0, dot),
+        shareToken: segment.slice(dot + 1) || null,
+    };
+}
+
 /** Fetches the immediate children of an artifact directory. */
 export async function fetchArtifactListing(
     id: string,
     path: string,
     token: string | null,
+    shareToken: string | null = null,
 ): Promise<ArtifactListing> {
     const params = new URLSearchParams();
     if (path !== "") params.set("path", path);
     if (token) params.set("token", token);
+    if (shareToken) params.set("share", shareToken);
     const query = params.toString();
     const response = await fetch(
         `/api/artifact/${encodeURIComponent(id)}${query ? `?${query}` : ""}`,
@@ -86,6 +114,7 @@ export async function fetchArtifactListing(
         locked: body.locked ?? false,
         canModify: body.canModify ?? true,
         label: body.label || undefined,
+        visibility: body.visibility === "private" ? "private" : "public",
     };
 }
 
@@ -231,6 +260,24 @@ export async function lockArtifact(id: string, token: string): Promise<void> {
 }
 
 /**
+ * Makes a locked artifact private (readable only through its share link) or
+ * public again. Requires the artifact's token. Pass `lock` to lock and make
+ * private in a single request.
+ */
+export async function setArtifactVisibility(
+    id: string,
+    visibility: ArtifactVisibility,
+    token: string,
+    lock = false,
+): Promise<void> {
+    await updateArtifact(
+        id,
+        lock ? { lock: true, token, visibility } : { visibility },
+        lock ? null : token,
+    );
+}
+
+/**
  * Renames an artifact. Allowed by anyone while unprotected; once locked, the
  * caller must supply the artifact's token.
  */
@@ -284,14 +331,21 @@ export function parentPath(subPath: string): string | null {
     return `${trimmed.slice(0, trimmed.lastIndexOf("/"))}/`;
 }
 
-/** The URL that serves a file's raw bytes. */
-export function fileUrl(id: string, subPath: string, name: string): string {
-    return `/a/${id}/${subPath}${name}`;
+/**
+ * The URL that serves a file's raw bytes. `basePath` is the artifact's
+ * prefix - `/a/<id>/`, or a `/s/` share prefix for a private artifact.
+ */
+export function fileUrl(basePath: string, subPath: string, name: string): string {
+    return `${basePath}${subPath}${name}`;
 }
 
 /** The URL that streams the whole artifact back as a single ZIP download. */
-export function artifactDownloadUrl(id: string): string {
-    return `/api/artifact/${encodeURIComponent(id)}/download`;
+export function artifactDownloadUrl(
+    id: string,
+    shareToken: string | null = null,
+): string {
+    const url = `/api/artifact/${encodeURIComponent(id)}/download`;
+    return shareToken ? `${url}?share=${encodeURIComponent(shareToken)}` : url;
 }
 
 /**
@@ -299,10 +353,10 @@ export function artifactDownloadUrl(id: string): string {
  * form; everything else previews its raw bytes.
  */
 export function previewUrl(
-    id: string,
+    basePath: string,
     subPath: string,
     file: ArtifactFile,
 ): string {
-    const raw = fileUrl(id, subPath, file.name);
+    const raw = fileUrl(basePath, subPath, file.name);
     return file.markdown ? `${raw}?render=html` : raw;
 }

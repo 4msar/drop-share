@@ -22,25 +22,69 @@ import { createArtifactZip } from "../lib/zip.js";
 // the strong ETag (set alongside this on raw file responses) still makes an
 // unchanged file's revalidation a cheap 304.
 const FILE_CACHE_CONTROL = "public, max-age=0, must-revalidate";
+// Private content must never be stored by a shared cache.
+const PRIVATE_FILE_CACHE_CONTROL = "private, max-age=0, must-revalidate";
 const MARKDOWN_CONTENT_TYPE = "text/markdown; charset=utf-8";
 const SANDBOX_CSP =
     "sandbox allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox allow-modals";
+
+/**
+ * How a browse request reached the artifact. `/a/<id>/` is the regular
+ * route; `/s/<id>[.<shareToken>]/` is the read-only share route, whose token
+ * rides in the path (not the query) so relative asset requests from an
+ * uploaded HTML page keep it automatically.
+ */
+export interface BrowseAccess {
+    /** URL prefix the artifact is served under, e.g. `/a/<id>/`. */
+    basePath: string;
+    shareToken: string | null;
+    shared: boolean;
+}
 
 export async function handleArtifactBrowse(
     id: string,
     rawSubPath: string,
     env: Env,
     request: Request,
+    access: BrowseAccess = {
+        basePath: `/a/${id}/`,
+        shareToken: null,
+        shared: false,
+    },
 ): Promise<Response> {
     if (!isValidArtifactId(id)) return jsonError(404, "Artifact not found");
+
+    // A share link is read-only, so the owner token is only honoured on the
+    // regular route (where the owner's viewer carries it as `?token=`).
+    const ownerToken = access.shared
+        ? null
+        : new URL(request.url).searchParams.get("token");
+    const { auth, metadata } = await loadArtifactAuth(
+        env.ARTIFACTS_BUCKET,
+        id,
+        ownerToken,
+        access.shareToken,
+    );
+    // Private without a valid token looks exactly like a missing artifact.
+    if (!auth.readable) return jsonError(404, "Artifact not found");
 
     const isDirectoryRequest = rawSubPath === "" || rawSubPath.endsWith("/");
     const relSubPath = rawSubPath.replace(/^\//, "");
 
-    if (isDirectoryRequest) {
-        return serveViewerShell(id, relSubPath, env, request);
+    const response = isDirectoryRequest
+        ? await serveViewerShell(id, relSubPath, env, request)
+        : await serveFile(id, relSubPath, env, request, access.basePath);
+
+    if (!access.shared) return response;
+    const shared = new Response(response.body, response);
+    // The share token is part of the URL, so it must not leak to other sites
+    // through the Referer of links/requests made by a shared HTML page.
+    shared.headers.set("Referrer-Policy", "no-referrer");
+    shared.headers.set("X-Robots-Tag", "noindex");
+    if (metadata?.visibility === "private") {
+        shared.headers.set("Cache-Control", PRIVATE_FILE_CACHE_CONTROL);
     }
-    return serveFile(id, relSubPath, env, request);
+    return shared;
 }
 
 /**
@@ -63,6 +107,7 @@ export async function handleArtifactJson(
     env: Env,
     rawPath?: string,
     token?: string | null,
+    shareToken?: string | null,
 ): Promise<Response> {
     if (!isValidArtifactId(id)) return jsonError(404, "Artifact not found");
 
@@ -70,9 +115,15 @@ export async function handleArtifactJson(
     if (subPath === null) return jsonError(404, "Artifact not found");
 
     const [authResult, listing] = await Promise.all([
-        loadArtifactAuth(env.ARTIFACTS_BUCKET, id, token ?? null),
+        loadArtifactAuth(
+            env.ARTIFACTS_BUCKET,
+            id,
+            token ?? null,
+            shareToken ?? null,
+        ),
         listArtifactChildren(env.ARTIFACTS_BUCKET, `${id}/${subPath}`),
     ]);
+    if (!authResult.auth.readable) return jsonError(404, "Artifact not found");
     if (listing.files.length === 0 && listing.directories.length === 0) {
         return jsonError(404, "Artifact not found");
     }
@@ -100,6 +151,7 @@ export async function handleArtifactJson(
         // createdAt) here, per the protected-artifacts authorization model.
         locked: authResult.auth.locked,
         canModify: authResult.auth.canModify,
+        visibility: authResult.metadata?.visibility ?? "public",
     });
     // An artifact's contents can change (see the re-upload feature), and this
     // listing is what the viewer draws itself from - a cached copy would show
@@ -232,21 +284,24 @@ function zipDownloadFilename(label: string | undefined, id: string): string {
 
 /**
  * Bundles every (non-hidden) file in an artifact into a single ZIP for
- * download. Like serving individual file bytes, this is public: it exposes
- * only what a visitor could already fetch one file at a time, so it isn't
- * gated on the lock token (listings and raw reads aren't either). The hidden
+ * download. Like serving individual file bytes, it exposes only what the
+ * caller could already fetch one file at a time: anyone for a public
+ * artifact, only a share/owner token holder for a private one. The hidden
  * `.artifact.json` marker is filtered out, same as everywhere else.
  */
 export async function handleArtifactDownload(
     id: string,
     env: Env,
+    token: string | null = null,
+    shareToken: string | null = null,
 ): Promise<Response> {
     if (!isValidArtifactId(id)) return jsonError(404, "Artifact not found");
 
     const [authResult, refs] = await Promise.all([
-        loadArtifactAuth(env.ARTIFACTS_BUCKET, id, null),
+        loadArtifactAuth(env.ARTIFACTS_BUCKET, id, token, shareToken),
         listAllArtifactKeys(env.ARTIFACTS_BUCKET, id),
     ]);
+    if (!authResult.auth.readable) return jsonError(404, "Artifact not found");
 
     const prefix = `${id}/`;
     const included = refs.filter(
@@ -324,6 +379,7 @@ async function serveFile(
     relSubPath: string,
     env: Env,
     request: Request,
+    basePath: string,
 ): Promise<Response> {
     const normalizedPath = normalizeRelativePath(relSubPath);
     if (normalizedPath === null || hasHiddenSegment(normalizedPath)) {
@@ -340,7 +396,7 @@ async function serveFile(
         });
         if (probe.objects.length > 0) {
             return Response.redirect(
-                `${new URL(request.url).origin}/a/${id}/${normalizedPath}/`,
+                `${new URL(request.url).origin}${basePath}${normalizedPath}/`,
                 301,
             );
         }

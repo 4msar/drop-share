@@ -2,7 +2,12 @@ import { createContext } from "react";
 import type { RecentItem } from "../lib/recent";
 
 export interface RecentItemsActions {
-    addItem: (id: string, visitedAt?: number, label?: string) => void;
+    addItem: (
+        id: string,
+        visitedAt?: number,
+        label?: string,
+        shareUrl?: string,
+    ) => void;
     removeItem: (id: string) => void;
     clearItems: () => void;
 }

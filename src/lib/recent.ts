@@ -3,6 +3,9 @@ export interface RecentItem {
     visitedAt: number;
     /** Human-readable label from the artifact's metadata, if it has one. Shown instead of the id in the recent list. */
     label?: string;
+    /** Set when the artifact was last opened through a read-only `/s/`
+     * share link, so the recent list reopens it the same way. */
+    shareUrl?: string;
 }
 
 export const STORAGE_KEY = "drop-share:recent";
@@ -11,6 +14,7 @@ function isRecentItem(value: unknown): value is RecentItem {
     if (typeof value !== "object" || value === null) return false;
     const item = value as RecentItem;
     if (typeof item.id !== "string" || typeof item.visitedAt !== "number") return false;
+    if (item.shareUrl !== undefined && typeof item.shareUrl !== "string") return false;
     return item.label === undefined || typeof item.label === "string";
 }
 
@@ -36,11 +40,17 @@ export function addRecentItem(
     id: string,
     visitedAt: number = Date.now(),
     label?: string,
+    shareUrl?: string,
 ): RecentItem[] {
     const current = getRecentItems();
     const resolvedLabel = label || current.find((item) => item.id === id)?.label;
     const items = [
-        { id, visitedAt, ...(resolvedLabel ? { label: resolvedLabel } : {}) },
+        {
+            id,
+            visitedAt,
+            ...(resolvedLabel ? { label: resolvedLabel } : {}),
+            ...(shareUrl ? { shareUrl } : {}),
+        },
         ...current.filter((item) => item.id !== id),
     ];
     return persist(items);

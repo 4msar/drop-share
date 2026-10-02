@@ -1,16 +1,21 @@
 export const ARTIFACT_METADATA_FILENAME = ".artifact.json";
 
+export type ArtifactVisibility = "public" | "private";
+
 export interface ArtifactMetadata {
     label: string;
     createdAt: string;
     token?: string;
-    visibility: "public" | "private";
+    visibility: ArtifactVisibility;
     [key: string]: unknown;
 }
 
 export interface ArtifactAuthState {
     locked: boolean;
     canModify: boolean;
+    /** Whether the caller may read the artifact at all: always for a public
+     * one, only with a matching share or owner token for a private one. */
+    readable: boolean;
 }
 
 export interface ArtifactAuthResult {
@@ -22,10 +27,14 @@ export interface ArtifactAuthResult {
 export const UNPROTECTED_AUTH_STATE: ArtifactAuthState = {
     locked: false,
     canModify: true,
+    readable: true,
 };
+/** A metadata file that fails to parse can't tell us whether the artifact
+ * is private, so it fails closed on reads too, not just on mutations. */
 export const MALFORMED_AUTH_STATE: ArtifactAuthState = {
     locked: true,
     canModify: false,
+    readable: false,
 };
 
 /** Longest label accepted through the label-update route (trimmed length). */
@@ -79,7 +88,7 @@ export function serializeArtifactMetadata(metadata: ArtifactMetadata): string {
 
 /**
  * Parses raw metadata JSON, validating only the fields this app reads
- * (`label`, `createdAt`, `token`) and preserving anything else unmodified, so
+ * (`label`, `createdAt`, `token`, `visibility`) and preserving anything else unmodified, so
  * a future field never gets silently dropped on the next read-modify-write.
  * Returns null for anything that fails to parse as JSON, isn't a plain
  * object, or is missing/mistypes a known field - the caller treats that as
@@ -108,12 +117,17 @@ export function parseArtifactMetadata(raw: string): ArtifactMetadata | null {
         return null;
     }
 
+    const visibility = record.visibility ?? "public";
+    if (visibility !== "public" && visibility !== "private") return null;
+    // A private artifact's share token is derived from its owner token, so
+    // private without a token is an inconsistent state - fail closed.
+    if (visibility === "private" && record.token === undefined) return null;
+
     const metadata: ArtifactMetadata = {
         ...record,
         label: record.label,
         createdAt: record.createdAt,
-        visibility:
-            (record.visibility as ArtifactMetadata["visibility"]) ?? "public",
+        visibility,
     };
     if (record.token !== undefined) metadata.token = record.token as string;
     return metadata;
@@ -136,18 +150,41 @@ export function timingSafeEqual(a: string, b: string): boolean {
     return diff === 0;
 }
 
+/**
+ * Derives an artifact's read-only share token from its owner (lock) token:
+ * SHA-1(ownerToken) as lowercase hex - the same derivation the web client
+ * (`src/lib/hash.ts`) and the CLI use. Nothing extra is stored: the server
+ * recomputes it from the stored token, and since a hash can't be reversed,
+ * holding the share token never grants the owner token's modify access.
+ */
+export async function deriveShareToken(ownerToken: string): Promise<string> {
+    const digest = await crypto.subtle.digest(
+        "SHA-1",
+        new TextEncoder().encode(ownerToken),
+    );
+    return Array.from(new Uint8Array(digest))
+        .map((byte) => byte.toString(16).padStart(2, "0"))
+        .join("");
+}
+
 /** Derives auth state from metadata that is known to exist and parse successfully. */
-export function deriveAuthStateForMetadata(
+export async function deriveAuthStateForMetadata(
     metadata: ArtifactMetadata,
     suppliedToken: string | null,
-): ArtifactAuthState {
+    suppliedShareToken: string | null = null,
+): Promise<ArtifactAuthState> {
     if (metadata.token === undefined) return UNPROTECTED_AUTH_STATE;
-    return {
-        locked: true,
-        canModify:
-            suppliedToken !== null &&
-            timingSafeEqual(suppliedToken, metadata.token),
-    };
+    const canModify =
+        suppliedToken !== null &&
+        timingSafeEqual(suppliedToken, metadata.token);
+    let readable = metadata.visibility === "public" || canModify;
+    if (!readable && suppliedShareToken !== null) {
+        readable = timingSafeEqual(
+            suppliedShareToken,
+            await deriveShareToken(metadata.token),
+        );
+    }
+    return { locked: true, canModify, readable };
 }
 
 /**
@@ -161,6 +198,7 @@ export async function loadArtifactAuth(
     bucket: R2Bucket,
     artifactId: string,
     suppliedToken: string | null,
+    suppliedShareToken: string | null = null,
 ): Promise<ArtifactAuthResult> {
     const metadataObject = await bucket.get(metadataObjectKey(artifactId));
     if (metadataObject === null) {
@@ -177,7 +215,11 @@ export async function loadArtifactAuth(
     }
 
     return {
-        auth: deriveAuthStateForMetadata(metadata, suppliedToken),
+        auth: await deriveAuthStateForMetadata(
+            metadata,
+            suppliedToken,
+            suppliedShareToken,
+        ),
         metadataObject,
         metadata,
     };
