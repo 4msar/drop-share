@@ -4,6 +4,7 @@ export interface ArtifactMetadata {
     label: string;
     createdAt: string;
     token?: string;
+    visibility: "public" | "private";
     [key: string]: unknown;
 }
 
@@ -43,7 +44,7 @@ export function createArtifactMetadata(
     label: string,
     now: Date = new Date(),
 ): ArtifactMetadata {
-    return { label, createdAt: now.toISOString() };
+    return { label, createdAt: now.toISOString(), visibility: "public" };
 }
 
 /**
@@ -111,6 +112,8 @@ export function parseArtifactMetadata(raw: string): ArtifactMetadata | null {
         ...record,
         label: record.label,
         createdAt: record.createdAt,
+        visibility:
+            (record.visibility as ArtifactMetadata["visibility"]) ?? "public",
     };
     if (record.token !== undefined) metadata.token = record.token as string;
     return metadata;
