@@ -1,5 +1,6 @@
 import { BrowserRouter, Route, Routes } from "react-router";
 import { AppProviders } from "./contexts/AppProviders";
+import NotFoundPage from "./routes/NotFoundPage";
 import UploadPage from "./routes/UploadPage";
 import ViewerPage from "./routes/ViewerPage";
 
@@ -18,6 +19,7 @@ export default function App() {
           <Route path="/a/:id/*" element={<ViewerPage />} />
           {/* Read-only share links: /s/<id>/ (public) or /s/<id>.<shareToken>/ (private). */}
           <Route path="/s/:seg/*" element={<ViewerPage shared />} />
+          <Route path="*" element={<NotFoundPage />} />
         </Routes>
       </BrowserRouter>
     </AppProviders>

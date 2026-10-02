@@ -1,9 +1,10 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AppProviders } from "../contexts/AppProviders";
 import { deriveShareToken } from "../lib/hash";
 import { getRecentItems } from "../lib/recent";
+import { getSavedSidebarOpen } from "../lib/sidebar";
 import ViewerPage from "./ViewerPage";
 
 const ID = "01ARZ3NDEKTSV4RRFFQ69G5FAV";
@@ -170,5 +171,29 @@ describe("owner view of a private artifact", () => {
     expect(screen.queryByRole("button", { name: "Make private" })).toBeNull();
     screen.getByRole("button", { name: "Share" }).click();
     await waitFor(() => expect(writeText).toHaveBeenCalledWith(`http://localhost:3000/s/${ID}/`));
+  });
+});
+
+describe("file list toggle", () => {
+  it("remembers a closed file list across reloads", async () => {
+    stubApi();
+    await renderAt(`/a/${ID}/`);
+    screen.getByRole("button", { name: "Close file list" }).click();
+    await screen.findByRole("button", { name: "Open file list" });
+    expect(getSavedSidebarOpen()).toBe(false);
+
+    cleanup();
+    await renderAt(`/a/${ID}/`);
+    expect(screen.getByRole("button", { name: "Open file list" })).toBeTruthy();
+  });
+
+  it("does not let a resize override the saved choice", async () => {
+    stubApi();
+    await renderAt(`/a/${ID}/`);
+    screen.getByRole("button", { name: "Close file list" }).click();
+    await screen.findByRole("button", { name: "Open file list" });
+
+    window.dispatchEvent(new Event("resize"));
+    expect(screen.getByRole("button", { name: "Open file list" })).toBeTruthy();
   });
 });

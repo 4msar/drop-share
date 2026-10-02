@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
-import { useNavigate, useParams, useSearchParams } from "react-router";
-import { Button } from "../components/Button";
+import { useParams, useSearchParams } from "react-router";
 import { FileList } from "../components/FileList";
 import { Header } from "../components/Header";
 import { PreviewPane } from "../components/PreviewPane";
@@ -11,7 +10,13 @@ import {
     pickDefaultPreview,
     sortFiles,
 } from "../lib/artifact";
-import { ArchiveIcon, CheckIcon } from "../components/Icons";
+import { CheckIcon } from "../components/Icons";
+import { UnavailableScreen } from "../components/UnavailableScreen";
+import {
+    defaultSidebarOpen,
+    getSavedSidebarOpen,
+    saveSidebarOpen,
+} from "../lib/sidebar";
 import { ProgressBarWithTimeout } from "../components/ProgressBar";
 import { ErrorToast } from "../components/ErrorToast";
 import { ArtifactProvider } from "../contexts/ArtifactProvider";
@@ -65,11 +70,20 @@ export default function ViewerPage({ shared = false }: ViewerPageProps) {
 }
 
 function ViewerPageContent() {
-    const navigate = useNavigate();
     const [searchParams, setSearchParams] = useSearchParams();
     const { id, listing, loadError, actionError, deleted } = useArtifactState();
     const { reportError } = useArtifactActions();
-    const [fileListOpen, setFileListOpen] = useState(true);
+    // An explicit toggle is remembered across visits; until there is one,
+    // the default follows the layout (open beside the preview, closed when
+    // stacked on narrow screens).
+    const [fileListOpen, setFileListOpen] = useState(
+        () => getSavedSidebarOpen() ?? defaultSidebarOpen(window.innerWidth),
+    );
+    const toggleFileList = () => {
+        const next = !fileListOpen;
+        saveSidebarOpen(next);
+        setFileListOpen(next);
+    };
     const [sortMode, setSortMode] = useState<FileSortMode>("newest");
     const selectedFromQuery = searchParams.get("file");
 
@@ -94,19 +108,18 @@ function ViewerPageContent() {
     }, [listing?.label, id]);
 
     useEffect(() => {
+        // Only crossing the breakpoint re-applies the layout default (and
+        // only when nothing was saved) - an ordinary resize never overrides
+        // the viewer's own choice.
+        let wide = defaultSidebarOpen(window.innerWidth);
         const handleResize = () => {
-            if (window.innerWidth < 768) {
-                setFileListOpen(false);
-            } else {
-                setFileListOpen(true);
-            }
+            const nextWide = defaultSidebarOpen(window.innerWidth);
+            if (nextWide === wide) return;
+            wide = nextWide;
+            if (getSavedSidebarOpen() === null) setFileListOpen(nextWide);
         };
 
         window.addEventListener("resize", handleResize);
-
-        // Call the handler immediately to set the initial state
-        handleResize();
-
         return () => {
             window.removeEventListener("resize", handleResize);
         };
@@ -141,28 +154,10 @@ function ViewerPageContent() {
 
     if (loadError !== null) {
         return (
-            <main className="grid min-h-dvh place-items-center p-6">
-                <section
-                    role="alert"
-                    className="max-w-md text-center flex flex-col gap-y-4"
-                >
-                    <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-red-500/10 text-red-500">
-                        <ArchiveIcon />
-                    </div>
-
-                    <h1 className="text-2xl font-medium text-heading">
-                        Artifact unavailable
-                    </h1>
-                    <p className="text-body">{loadError}</p>
-                    <Button
-                        variant="primary"
-                        size="sm"
-                        onClick={() => void navigate("/")}
-                    >
-                        Go home
-                    </Button>
-                </section>
-            </main>
+            <UnavailableScreen
+                title="Artifact unavailable"
+                message={loadError}
+            />
         );
     }
 
@@ -209,7 +204,7 @@ function ViewerPageContent() {
                     files={files}
                     selected={selected}
                     sidebarOpen={fileListOpen}
-                    onToggle={() => setFileListOpen((open) => !open)}
+                    onToggle={toggleFileList}
                 />
             </div>
 
